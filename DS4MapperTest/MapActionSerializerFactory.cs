@@ -19,6 +19,9 @@ namespace DS4MapperTest
                 case "ButtonNoAction":
                     serializer = new ButtonNoActionSerializer(layer, action);
                     break;
+                case "TouchpadPressureDualStageAction":
+                    serializer = new TouchpadPressureDualStageActionSerializer(layer, action);
+                    break;
                 case "StickPadAction":
                     serializer = new StickPadActionSerializer(layer, action);
                     break;
@@ -37,6 +40,15 @@ namespace DS4MapperTest
                 case "StickFlickStickAction":
                     serializer = new StickFlickStickActionSerializer(layer, action);
                     break;
+                case "StickHybridAimAction":
+                    serializer = new StickHybridAimActionSerializer(layer, action);
+                    break;
+                case "StickMouseRingAction":
+                    serializer = new StickMouseRingActionSerializer(layer, action);
+                    break;
+                case "StickAnalogEmulationAction":
+                    serializer = new AnalogEmulationActionSerializer(layer, action);
+                    break;
                 case "StickNoAction":
                     serializer = new StickNoActionSerializer(layer, action);
                     break;
@@ -48,6 +60,9 @@ namespace DS4MapperTest
                     break;
                 case "TriggerDualStageAction":
                     serializer = new TriggerDualStageActionSerializer(layer, action);
+                    break;
+                case "TriggerMouseAction":
+                    serializer = new TriggerMouseActionSerializer(layer, action);
                     break;
                 case "TouchStickTranslateAction":
                     serializer = new TouchpadStickActionSerializer(layer, action);
@@ -82,6 +97,9 @@ namespace DS4MapperTest
                 case "TouchNoAction":
                     serializer = new TouchpadNoActionSerializer(layer, action);
                     break;
+                case "TouchPassthruAction":
+                    serializer = new TouchpadPassthruActionSerializer(layer, action);
+                    break;
                 case "DPadAction":
                     serializer = new DpadActionSerializer(layer, action);
                     break;
@@ -99,6 +117,9 @@ namespace DS4MapperTest
                     break;
                 case "GyroDirSwipeAction":
                     serializer = new GyroDirectionalSwipeSerializer(layer, action);
+                    break;
+                case "GyroPassthruAction":
+                    serializer = new GyroPassthruActionSerializer(layer, action);
                     break;
                 case "GyroNoAction":
                     serializer = new GyroNoMapActionSerializer(layer, action);

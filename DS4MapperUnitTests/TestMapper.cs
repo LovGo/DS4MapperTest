@@ -42,7 +42,33 @@ namespace DS4MapperUnitTests
 
         public override DeviceReaderBase BaseReader => throw new NotImplementedException();
 
+        // Lets tests exercise device-type-gated Mapper behaviour (e.g. the Steam Controller 2
+        // touchpad pressure migration pass) without needing a real device backend. Defaults to
+        // None so every pre-existing test that never sets this keeps its original behaviour.
+        public InputDeviceType DeviceTypeOverride { get; set; } = InputDeviceType.None;
+        public override InputDeviceType DeviceType => DeviceTypeOverride;
+
+        public void RunMigrateLegacyTouchpadClickBindings(Profile profile)
+        {
+            MigrateLegacyTouchpadClickBindings(profile);
+        }
+
         public static Dictionary<uint, int> KeyReferenceCountDict => keyReferenceCountDict;
+        public static Dictionary<int, int> MouseButtonReferenceCountDict => mouseButtonReferenceCountDict;
+
+        public void AttachVirtualOutputForTest(VirtualKBMBase handler, VirtualKBMMapping mapping)
+        {
+            eventInputHandler = handler;
+            eventInputMapping = mapping;
+        }
+
+        // Lets tests drive per-action Prepare/Event calls directly (bypassing
+        // Reader_Report) while still controlling the frame time those actions read.
+        public void SetCurrentLatencyForTest(double latency)
+        {
+            currentLatency = latency;
+            currentRate = latency > 0.0 ? 1.0 / latency : 0.0;
+        }
 
         private const short STICK_MAX = 30000;
         private const short STICK_MIN = -30000;
@@ -476,6 +502,11 @@ namespace DS4MapperUnitTests
                 gamepadSync = intermediateState.Dirty;
 
                 //ProcessSyncEvents();
+
+                if (eventInputHandler != null && eventInputMapping != null)
+                {
+                    SyncMouseButtons();
+                }
 
                 SyncKeyboard();
 

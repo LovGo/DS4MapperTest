@@ -29,6 +29,10 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
 
         public override DeviceReaderBase BaseReader => reader;
         public override InputDeviceType DeviceType => InputDeviceType.SteamControllerTriton;
+        public override double GetNormalisedTriggerPosition(
+            TriggerSensitivityModifierTrigger trigger) => Math.Clamp(
+                (trigger == TriggerSensitivityModifierTrigger.Left ? currentMapperState.L2 : currentMapperState.R2) / 32767.0,
+                0.0, 1.0);
 
         private StickDefinition lsDefintion;
         private StickDefinition rsDefintion;
@@ -184,11 +188,8 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
             lpadYAxis.PostInit();
 
             leftPadDefiniton = new TouchpadDefinition(lpadXAxis, lpadYAxis, TouchpadActionCodes.TouchL,
-                elapsedReference: device.BaseElapsedReference, mouseScale: 0.012 * 1.1, mouseOffset: 0.4,
+                elapsedReference: device.BaseElapsedReference, mouseScale: 1.0, mouseOffset: 0.0,
                 trackballScale: 0.000023);
-            leftPadDefiniton.throttleRelMouse = true;
-            leftPadDefiniton.throttleRelMousePower = TRACKPAD_MOUSE_POWER;
-            leftPadDefiniton.throttleRelMouseZone = TRACKPAD_MOUSE_DISPLACEMENT;
 
             TouchpadDefinition.TouchAxisData rpadXAxis = new TouchpadDefinition.TouchAxisData
             {
@@ -213,11 +214,8 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
             rpadYAxis.PostInit();
 
             rightPadDefinition = new TouchpadDefinition(rpadXAxis, rpadYAxis, TouchpadActionCodes.TouchR,
-                elapsedReference: device.BaseElapsedReference, mouseScale: 0.012 * 1.1, mouseOffset: 0.4,
+                elapsedReference: device.BaseElapsedReference, mouseScale: 1.0, mouseOffset: 0.0,
                 trackballScale: 0.000023);
-            rightPadDefinition.throttleRelMouse = true;
-            rightPadDefinition.throttleRelMousePower = TRACKPAD_MOUSE_POWER;
-            rightPadDefinition.throttleRelMouseZone = TRACKPAD_MOUSE_DISPLACEMENT;
 
             TriggerDefinition.TriggerAxisData ltAxis = new TriggerDefinition.TriggerAxisData
             {
@@ -313,6 +311,11 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
             reader.StartUpdate();
         }
 
+        public static short NormaliseStickAxis(short axisValue)
+        {
+            return Math.Max(axisValue, (short)-32767);
+        }
+
         private void Reader_Report(SteamControllerTritonReader sender, SteamControllerTritonDevice device)
         {
             while (pauseMapper)
@@ -375,7 +378,8 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
                 //if ((currentMapperState.LX != previousMapperState.LX) || (currentMapperState.LY != previousMapperState.LY))
                 {
                     //Trace.WriteLine($"{currentMapperState.LX} {currentMapperState.LY}");
-                    mapAction.Prepare(this, currentMapperState.LX, currentMapperState.LY);
+                    mapAction.Prepare(this, NormaliseStickAxis(currentMapperState.LX),
+                        NormaliseStickAxis(currentMapperState.LY));
                 }
 
                 if (mapAction.active)
@@ -387,7 +391,8 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
                 //if ((currentMapperState.RX != previousMapperState.RX) || (currentMapperState.RY != previousMapperState.RY))
                 {
                     //Trace.WriteLine($"{currentMapperState.RX} {currentMapperState.RY}");
-                    mapAction.Prepare(this, currentMapperState.RX, currentMapperState.RY);
+                    mapAction.Prepare(this, NormaliseStickAxis(currentMapperState.RX),
+                        NormaliseStickAxis(currentMapperState.RY));
                 }
 
                 if (mapAction.active)
@@ -524,14 +529,26 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
 
 
                 tempBtnAct = currentLayer.buttonActionDict["LeftPadClick"];
-                if (currentMapperState.LeftPad.Click || currentMapperState.LeftPad.Click != previousMapperState.LeftPad.Click)
+                if (tempBtnAct is TouchpadPressureDualStageAction leftPadPressureAction)
+                {
+                    // Pressure-capable pad (Steam Controller 2): drive Soft/Full Press from
+                    // analog force + finger touch every frame rather than the digital click bit.
+                    leftPadPressureAction.PrepareTouchpadPressure(this,
+                        currentMapperState.LeftPad.Pressure, currentMapperState.LeftPad.Touch);
+                }
+                else if (currentMapperState.LeftPad.Click || currentMapperState.LeftPad.Click != previousMapperState.LeftPad.Click)
                 {
                     tempBtnAct.Prepare(this, currentMapperState.LeftPad.Click);
                 }
                 if (tempBtnAct.active) tempBtnAct.Event(this);
 
                 tempBtnAct = currentLayer.buttonActionDict["RightPadClick"];
-                if (currentMapperState.RightPad.Click || currentMapperState.RightPad.Click != previousMapperState.RightPad.Click)
+                if (tempBtnAct is TouchpadPressureDualStageAction rightPadPressureAction)
+                {
+                    rightPadPressureAction.PrepareTouchpadPressure(this,
+                        currentMapperState.RightPad.Pressure, currentMapperState.RightPad.Touch);
+                }
+                else if (currentMapperState.RightPad.Click || currentMapperState.RightPad.Click != previousMapperState.RightPad.Click)
                 {
                     tempBtnAct.Prepare(this, currentMapperState.RightPad.Click);
                 }
@@ -633,6 +650,21 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
                     previousTouchFrameRightPad = eventFrame;
                 }
 
+                TouchpadMapAction leftTouchAction = currentLayer.touchpadActionDict["LeftTouchpad"];
+                TouchpadMapAction rightTouchAction = currentLayer.touchpadActionDict["RightTouchpad"];
+                bool leftPassthru = leftTouchAction.OutputsNativeTouch;
+                bool rightPassthru = rightTouchAction.OutputsNativeTouch;
+                bool leftTouchActive = leftPassthru && currentMapperState.LeftPad.Touch;
+                bool rightTouchActive = rightPassthru && currentMapperState.RightPad.Touch;
+                ApplyVirtualTouchState(
+                    leftTouchActive ? NormaliseTouchAxis(currentMapperState.LeftPad.X, -32768.0, 32767.0) * 0.5 : 0.0,
+                    leftTouchActive ? NormaliseTouchAxis(currentMapperState.LeftPad.Y, -32768.0, 32767.0) : 0.0,
+                    leftTouchActive,
+                    rightTouchActive ? 0.5 + (NormaliseTouchAxis(currentMapperState.RightPad.X, -32768.0, 32767.0) * 0.5) : 0.0,
+                    rightTouchActive ? NormaliseTouchAxis(currentMapperState.RightPad.Y, -32768.0, 32767.0) : 0.0,
+                    rightTouchActive,
+                    false);
+
                 DpadDirections currentDpad =
                     DpadDirections.Centered;
 
@@ -673,7 +705,8 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
                         elapsedReference = device.BaseElapsedReference,
                     };
 
-                    PopulateStateGyro(ref gyroFrame);
+                    if (gyroAct.OutputsNativeGyro) PopulateStateGyro(ref gyroFrame);
+                    else ClearStateGyro();
                     gyroAct.Prepare(this, ref gyroFrame);
                     if (gyroAct.active)
                     {
@@ -768,15 +801,46 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
 
         public override void HookFeedback()
         {
-            viiper360Feedback = TestVIIPER360Feedback;
-            bool result = LibVIIPER.SetXbox360RumbleCallback(deviceHandle, viiper360Feedback);
-            //Trace.WriteLine($"RESULT {result}");
+            if (outputControlType == OutputContType.Xbox360)
+            {
+                viiper360Feedback = TestVIIPER360Feedback;
+                bool result = LibVIIPER.SetXbox360RumbleCallback(deviceHandle, viiper360Feedback);
+                //Trace.WriteLine($"RESULT {result}");
+            }
+            else if (outputControlType == OutputContType.DualSense ||
+                outputControlType == OutputContType.DualSenseEdge)
+            {
+                viiperDSFeedback = TestVIIPERDSFeedback;
+                bool result = LibVIIPER.SetDualSenseOutputCallback(deviceHandle, viiperDSFeedback);
+                //Trace.WriteLine($"RESULT {result}");
+            }
+            else if (outputControlType == OutputContType.SwitchPro2)
+            {
+                viiperNS2ProFeedback = TestVIIPERNS2ProFeedback;
+                bool result = LibVIIPER.SetNS2ProOutputCallback(deviceHandle, viiperNS2ProFeedback);
+                //Trace.WriteLine($"RESULT {result}");
+            }
         }
 
         public void TestVIIPER360Feedback(nuint handle, byte leftMotor, byte rightMotor)
         {
             device.currentLeftAmpRatio = leftMotor / 255.0;
             device.currentRightAmpRatio = rightMotor / 255.0;
+            device.rumbleDirty = true;
+        }
+
+        public void TestVIIPERDSFeedback(nuint handle, byte rumbleSmall, byte rumbleLarge,
+            byte ledRed, byte ledGreen, byte ledBlue, byte playerLeds)
+        {
+            device.currentLeftAmpRatio = rumbleLarge / 255.0;
+            device.currentRightAmpRatio = rumbleSmall / 255.0;
+            device.rumbleDirty = true;
+        }
+
+        public void TestVIIPERNS2ProFeedback(nuint handle, NS2ProOutputState output)
+        {
+            device.currentLeftAmpRatio = ApproximateNS2ProRumbleRatio(output, true);
+            device.currentRightAmpRatio = ApproximateNS2ProRumbleRatio(output, false);
             device.rumbleDirty = true;
         }
 

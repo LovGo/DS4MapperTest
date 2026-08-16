@@ -44,14 +44,12 @@ namespace DS4MapperTest.ButtonActions
         private List<ActionFunc> releaseFuns = new List<ActionFunc>();
         private List<ActionFunc> distanceFuns = new List<ActionFunc>();
         private List<int> removeFuncsCandiates = new List<int>();
-        //private List<ActionFunc> tempReleaseFuncs = new List<ActionFunc>();
 
         private List<ActionFunc> usedFuncList;
 
         protected event EventHandler ActionFuncsUpdated;
         private event EventHandler<NotifyPropertyChangeArgs> NotifyPropertyChanged;
 
-        public List<ActionFunc> ReleaseFuns { get => releaseFuns; }
         public List<ActionFunc> ActionFuncs { get => actionFuncs; }
 
         public override double ButtonDistance
@@ -90,7 +88,10 @@ namespace DS4MapperTest.ButtonActions
                 this.CopyBaseProps(parentAction);
                 //parentAction.CopyBaseProps(this);
 
-                actionFuncs.AddRange(parentAction.actionFuncs);
+                foreach (ActionFunc func in parentAction.actionFuncs)
+                {
+                    actionFuncs.Add(ActionFuncCopyFactory.CopyFunc(func));
+                }
                 parentAction.hasLayeredAction = true;
                 mappingId = parentAction.mappingId;
 
@@ -155,6 +156,7 @@ namespace DS4MapperTest.ButtonActions
                         usedFuncList = actionFuncs;
                     }
 
+                    ConfigureRegularPressInterruptDelay(usedFuncList);
                     actionFuncCandidates.AddRange(usedFuncList);
                     //actionFuncCandidates.AddRange(actionFuncs);
                     if (alterState)
@@ -184,6 +186,41 @@ namespace DS4MapperTest.ButtonActions
         }
 
         private bool interruptFound = false;
+
+        // Steam Input delays the regular press whenever an enabled Hold or
+        // Double Press can still claim the input. With both present, the
+        // longest configured interval is the single decision window.
+        protected static void ConfigureRegularPressInterruptDelay(IEnumerable<ActionFunc> funcs)
+        {
+            int decisionWindowMs = 0;
+            foreach (ActionFunc func in funcs)
+            {
+                if (func is HoldPressFunc hold && hold.InterruptRegularPress)
+                {
+                    decisionWindowMs = Math.Max(decisionWindowMs, hold.DurationMs);
+                }
+                else if (func is DoublePressFunc doublePress && doublePress.InterruptRegularPress)
+                {
+                    decisionWindowMs = Math.Max(decisionWindowMs, doublePress.DurationMs);
+                }
+                else if (func is SimPressFunc simPress && simPress.InterruptRegularPress)
+                {
+                    decisionWindowMs = Math.Max(decisionWindowMs, simPress.SimPressTimeMs);
+                }
+            }
+
+            foreach (ActionFunc func in funcs)
+            {
+                if (func is NormalPressFunc regularPress)
+                {
+                    regularPress.ConfigureInterruptDelay(decisionWindowMs);
+                    // The existing output path already knows how to cancel an
+                    // active normal func when a press activator wins.
+                    regularPress.interruptable = decisionWindowMs > 0;
+                }
+            }
+        }
+
         public override void Event(Mapper mapper)
         {
             if (active)
@@ -340,7 +377,7 @@ namespace DS4MapperTest.ButtonActions
                                     OutputActionData action = activeActionsEnumerator.Current;
                                     if (action.activatedEvent)
                                     {
-                                        mapper.RunEventFromButton(action, status);
+                                        mapper.RunEventFromButton(action, false);
                                         action.Release();
                                         //if (action.checkTick) action.Release();
                                     }
@@ -573,6 +610,12 @@ namespace DS4MapperTest.ButtonActions
                 else if (!status)
                 {
                     activeActions.Clear();
+
+                    foreach (ActionFunc func in actionFuncCandidates)
+                    {
+                        func.Prepare(mapper, false, stateData);
+                    }
+
                     actionFuncCandidates.Clear();
 
                     bool stillActiveFun = false;
@@ -596,6 +639,48 @@ namespace DS4MapperTest.ButtonActions
                     {
                         activeFuns.AddRange(actionFuncCandidates);
                         actionFuncCandidates.Clear();
+                    }
+
+                    // A deferred regular press remains alive after an early
+                    // release so it can emit the Steam-style automatic tap at
+                    // the end of the decision window.
+                    for (int pendingIndex = activeFuns.Count - 1; pendingIndex >= 0; pendingIndex--)
+                    {
+                        if (activeFuns[pendingIndex] is not NormalPressFunc regularPress ||
+                            !regularPress.IsInterruptDelayPending)
+                        {
+                            continue;
+                        }
+
+                        regularPress.Event(mapper, stateData);
+                        foreach (OutputActionData action in regularPress.OutputActions)
+                        {
+                            if (processAction)
+                            {
+                                ProcessAction(mapper, regularPress.outputActive, action);
+                            }
+                            else if (analog)
+                            {
+                                mapper.RunEventFromAnalog(action, regularPress.outputActive,
+                                    ButtonDistance, AxisUnit);
+                            }
+                            else
+                            {
+                                mapper.RunEventFromButton(action, regularPress.outputActive);
+                            }
+
+                            action.firstRun = false;
+                        }
+
+                        if (regularPress.finished)
+                        {
+                            foreach (OutputActionData action in regularPress.OutputActions)
+                            {
+                                action.Release();
+                                action.firstRun = true;
+                            }
+                            activeFuns.RemoveAt(pendingIndex);
+                        }
                     }
 
                     OutputActionDataEnumerator activeActionsEnumerator =
@@ -640,155 +725,12 @@ namespace DS4MapperTest.ButtonActions
                         }
                     }
 
-                    // Only bother if a ReleaseFunc instance was found
+                    // Genuine digital falling edge: fire any Release Press-style functions
+                    // that were armed while the source was held.
                     if (releaseFuns.Count > 0)
                     {
-                        bool releaseNonInterrupt = false;
-                        ActionFuncEnumerator funcEnumerator =
-                            new ActionFuncEnumerator(releaseFuns);
-                        //funcEnumerator.MoveToEnd();
-                        //int releaseIdx = releaseFuns.Count - 1;
-                        long maxTime = 0;
-                        while (funcEnumerator.MoveNext())
-                        {
-                            ReleaseFunc func = funcEnumerator.Current as ReleaseFunc;
-                            //func.Prepare(mapper, new ActionFuncStateData()
-                            //{
-                            //    state = true,
-                            //    axisValue = 0.0
-                            //});
-                            func.Prepare(mapper, true, stateData);
-                            Trace.WriteLine($"FUNC ACTIVE {func.active} {func}");
-                            if (func.active)
-                            {
-                                if (!func.interruptable)
-                                {
-                                    releaseNonInterrupt = true;
-                                }
-
-                                if (func.DurationMs >= maxTime)
-                                {
-                                    maxTime = func.DurationMs;
-                                }
-                                //tempReleaseFuncs.Add(cunc);
-                            }
-                            else
-                            {
-                                func.Prepare(mapper, false, stateData);
-                                //func.Prepare(mapper, new ActionFuncStateData()
-                                //{
-                                //    state = false,
-                                //    axisValue = 0.0,
-                                //});
-                                //releaseFuns.RemoveAt(releaseIdx);
-                            }
-
-                            //releaseIdx -= 1;
-                        }
-
-                        // Release funcs found. Activate events
-                        Trace.WriteLine(maxTime);
-                        funcEnumerator = new ActionFuncEnumerator(releaseFuns);
-                        while (funcEnumerator.MoveNext())
-                        {
-                            ReleaseFunc func = funcEnumerator.Current as ReleaseFunc;
-                            //func.distance < distancePercent
-                            bool shouldInterrupt = func.active && func.interruptable && func.DurationMs < maxTime;
-                            if (!shouldInterrupt && func.active)
-                            //if (func.active)
-                            {
-                                Trace.WriteLine("MADE IT HERE");
-                                foreach (OutputActionData action in func.OutputActions)
-                                {
-                                    if (action.processOutput) action.ProcessAction();
-                                    if (action.breakSequence) break;
-
-                                    if (processAction)
-                                    {
-                                        ProcessAction(mapper, true, action);
-                                    }
-                                    else if (analog)
-                                    {
-                                        mapper.RunEventFromAnalog(action, true, ButtonDistance, AxisUnit);
-                                    }
-                                    else
-                                    {
-                                        mapper.RunEventFromButton(action, true);
-                                    }
-
-                                    //mapper.PendingReleaseActions.Add(action);
-                                    action.firstRun = true;
-                                    //if (action.checkTick) action.Release();
-                                    //else if (action.breakSequence) break;
-                                    bool currentBreakSequence = action.breakSequence;
-                                    if (action.OutputType != OutputActionData.ActionType.Keyboard)
-                                    {
-                                        action.Release();
-                                    }
-
-                                    if (currentBreakSequence) break;
-                                    //activeActions.Add(action);
-                                }
-
-                                mapper.PendingReleaseFuns.Add(func);
-                            }
-                            else
-                            {
-                                func.Prepare(mapper, false, stateData);
-                            }
-
-                            //func.Prepare(mapper, false, stateData);
-                            //func.Prepare(mapper, new ActionFuncStateData()
-                            //{
-                            //    state = false,
-                            //    axisValue = 0.0,
-                            //});
-                        }
-
-                        //tempReleaseFuncs.Clear();
-                        releaseFuns.Clear();
+                        FireArmedReleaseFuncs(mapper);
                     }
-
-                    /*ActionFunc tempRelease = null;
-                    foreach (ActionFunc func in releaseFuns)
-                    {
-                        func.Prepare(mapper, true);
-
-                        if (func.active)
-                        {
-                            tempRelease = func;
-                        }
-
-                        //func.Release(mapper);
-                    }
-
-                    releaseFuns.Remove(tempRelease);
-                    */
-
-                    /*foreach(ActionFunc func in releaseFuns)
-                    {
-                        func.Release(mapper);
-                    }
-
-                    releaseFuns.Clear();
-                    */
-
-                    /*if (tempRelease != null)
-                    {
-                        foreach (OutputActionData action in tempRelease.OutputActions)
-                        {
-                            mapper.RunEventFromButton(action, true);
-                            //mapper.PendingReleaseActions.Add(action);
-                            action.firstRun = true;
-                            if (action.checkTick) action.Release();
-                            else if (action.breakSequence) break;
-                            //activeActions.Add(action);
-                        }
-
-                        mapper.PendingReleaseFuns.Add(tempRelease);
-                        tempRelease.Prepare(mapper, false);
-                    }
-                    */
 
                     /*foreach (ActionFunc func in actionFuncCandidates)
                     {
@@ -892,91 +834,6 @@ namespace DS4MapperTest.ButtonActions
                 }
                 */
 
-                if (!ignoreReleaseActions)
-                {
-                    // Only bother if a ReleaseFunc instance was found
-                    if (releaseFuns.Count > 0)
-                    {
-                        bool releaseNonInterrupt = false;
-                        ActionFuncEnumerator funcEnumerator =
-                            new ActionFuncEnumerator(releaseFuns);
-                        //funcEnumerator.MoveToEnd();
-                        //int releaseIdx = releaseFuns.Count - 1;
-                        long maxTime = 0;
-                        while (funcEnumerator.MoveNext())
-                        {
-                            ReleaseFunc func = funcEnumerator.Current as ReleaseFunc;
-                            //stateData.state = true;
-                            func.Prepare(mapper, true, stateData);
-                            //func.Prepare(mapper, new ActionFuncStateData()
-                            //{
-                            //    state = true,
-                            //    axisValue = 1.0,
-                            //});
-                            if (func.active)
-                            {
-                                if (!func.interruptable)
-                                {
-                                    releaseNonInterrupt = true;
-                                }
-
-                                if (func.DurationMs >= maxTime)
-                                {
-                                    maxTime = func.DurationMs;
-                                }
-                                //tempReleaseFuncs.Add(cunc);
-                            }
-                            else
-                            {
-                                func.Prepare(mapper, false, stateData);
-                                //func.Prepare(mapper, new ActionFuncStateData()
-                                //{
-                                //    state = false,
-                                //    axisValue = 0.0,
-                                //});
-                                //releaseFuns.RemoveAt(releaseIdx);
-                            }
-
-                            //releaseIdx -= 1;
-                            stateData.state = false;
-                        }
-
-                        // Release funcs found. Activate events
-                        funcEnumerator = new ActionFuncEnumerator(releaseFuns);
-                        while (funcEnumerator.MoveNext())
-                        {
-                            ReleaseFunc func = funcEnumerator.Current as ReleaseFunc;
-                            //func.distance < distancePercent
-                            bool shouldInterrupt = func.active && func.interruptable && func.DurationMs < maxTime;
-                            if (!shouldInterrupt && func.active)
-                            {
-                                foreach (OutputActionData action in func.OutputActions)
-                                {
-                                    mapper.RunEventFromButton(action, true);
-                                    //mapper.PendingReleaseActions.Add(action);
-                                    action.firstRun = true;
-                                    if (action.checkTick) action.Release();
-                                    else if (action.breakSequence) break;
-                                    //activeActions.Add(action);
-                                }
-
-                                mapper.PendingReleaseFuns.Add(func);
-                            }
-
-                            stateData.state = false;
-                            func.Prepare(mapper, false, stateData);
-                            //func.Prepare(mapper, new ActionFuncStateData()
-                            //{
-                            //    state = false,
-                            //    axisValue = 0.0,
-                            //});
-                        }
-
-                        //tempReleaseFuncs.Clear();
-                        releaseFuns.Clear();
-                    }
-                }
-
                 //pressFunc.Release(mapper);
                 /*outputActionEnumerator.MoveToEnd();
                 while (outputActionEnumerator.MovePrevious())
@@ -992,6 +849,18 @@ namespace DS4MapperTest.ButtonActions
                 */
             }
 
+            if (releaseFuns.Count > 0)
+            {
+                if (!ignoreReleaseActions)
+                {
+                    FireArmedReleaseFuncs(mapper);
+                }
+                else
+                {
+                    DiscardArmedReleaseFuncs(mapper);
+                }
+            }
+
             active = false;
             activeEvent = false;
             interruptFound = false;
@@ -1000,6 +869,46 @@ namespace DS4MapperTest.ButtonActions
             //{
             //    stateData.Reset(true);
             //}
+        }
+
+        // Fires any Release Press-style functions that were armed while the source was
+        // held, exactly once per genuine falling edge. Presses configured outputs
+        // immediately and, for a non-toggle firing, hands the func to the mapper's pending
+        // list so the matching release lands on a later output synchronization pass.
+        private void FireArmedReleaseFuncs(Mapper mapper)
+        {
+            foreach (ActionFunc func in releaseFuns)
+            {
+                func.Prepare(mapper, false, stateData);
+                if (func.active)
+                {
+                    foreach (OutputActionData action in func.OutputActions)
+                    {
+                        mapper.RunEventFromButton(action, func.outputActive);
+                        action.firstRun = true;
+                    }
+
+                    if (!func.finished)
+                    {
+                        mapper.PendingReleaseFuns.Add(func);
+                    }
+                }
+            }
+
+            releaseFuns.Clear();
+        }
+
+        // Used when an armed Release Press func is being discarded rather than genuinely
+        // released (ignoreReleaseActions binding edits, or a soft layer/action swap): clears
+        // the armed state safely without firing any output.
+        private void DiscardArmedReleaseFuncs(Mapper mapper)
+        {
+            foreach (ActionFunc func in releaseFuns)
+            {
+                func.Release(mapper);
+            }
+
+            releaseFuns.Clear();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1018,6 +927,13 @@ namespace DS4MapperTest.ButtonActions
 
             activeFuns.Clear();
             actionFuncCandidates.Clear();
+
+            // This is a soft/layer-instance release, not a genuine source release - any
+            // armed Release Press func is discarded without firing.
+            if (releaseFuns.Count > 0)
+            {
+                DiscardArmedReleaseFuncs(mapper);
+            }
 
             OutputActionDataEnumerator activeActionsEnumerator =
                 new OutputActionDataEnumerator(activeActions);
@@ -1063,92 +979,6 @@ namespace DS4MapperTest.ButtonActions
                 func.Release(mapper);
             }
             */
-
-            if (!mapper.Quit)
-            {
-                // Only bother if a ReleaseFunc instance was found
-                if (releaseFuns.Count > 0)
-                {
-                    bool releaseNonInterrupt = false;
-                    ActionFuncEnumerator funcEnumerator =
-                        new ActionFuncEnumerator(releaseFuns);
-                    //funcEnumerator.MoveToEnd();
-                    //int releaseIdx = releaseFuns.Count - 1;
-                    long maxTime = 0;
-                    while (funcEnumerator.MoveNext())
-                    {
-                        ReleaseFunc func = funcEnumerator.Current as ReleaseFunc;
-                        //stateData.state = true;
-                        func.Prepare(mapper, true, stateData);
-                        //func.Prepare(mapper, new ActionFuncStateData()
-                        //{
-                        //    state = true,
-                        //    axisValue = 1.0,
-                        //});
-                        if (func.active)
-                        {
-                            if (!func.interruptable)
-                            {
-                                releaseNonInterrupt = true;
-                            }
-
-                            if (func.DurationMs >= maxTime)
-                            {
-                                maxTime = func.DurationMs;
-                            }
-                            //tempReleaseFuncs.Add(cunc);
-                        }
-                        else
-                        {
-                            func.Prepare(mapper, false, stateData);
-                            //func.Prepare(mapper, new ActionFuncStateData()
-                            //{
-                            //    state = false,
-                            //    axisValue = 0.0,
-                            //});
-                            //releaseFuns.RemoveAt(releaseIdx);
-                        }
-
-                        //releaseIdx -= 1;
-                        stateData.state = false;
-                    }
-
-                    // Release funcs found. Activate events
-                    funcEnumerator = new ActionFuncEnumerator(releaseFuns);
-                    while (funcEnumerator.MoveNext())
-                    {
-                        ReleaseFunc func = funcEnumerator.Current as ReleaseFunc;
-                        //func.distance < distancePercent
-                        bool shouldInterrupt = func.active && func.interruptable && func.DurationMs < maxTime;
-                        if (!shouldInterrupt && func.active)
-                        {
-                            foreach (OutputActionData action in func.OutputActions)
-                            {
-                                mapper.RunEventFromButton(action, true);
-                                //mapper.PendingReleaseActions.Add(action);
-                                action.firstRun = true;
-                                if (action.checkTick) action.Release();
-                                else if (action.breakSequence) break;
-                                //activeActions.Add(action);
-                            }
-
-                            mapper.PendingReleaseFuns.Add(func);
-                        }
-
-                        stateData.state = false;
-                        //func.Prepare(mapper, false, stateData);
-
-                        //func.Prepare(mapper, new ActionFuncStateData()
-                        //{
-                        //    state = false,
-                        //    axisValue = 0.0,
-                        //});
-                    }
-
-                    //tempReleaseFuncs.Clear();
-                    releaseFuns.Clear();
-                }
-            }
 
             //pressFunc.Release(mapper);
             /*outputActionEnumerator.MoveToEnd();
@@ -1234,7 +1064,6 @@ namespace DS4MapperTest.ButtonActions
                 */
 
                 //distanceFuns.Clear();
-                //releaseFuns.Clear();
                 //actionFuncCandidates.Clear();
 
                 //pressFunc.Release(mapper);
@@ -1301,6 +1130,7 @@ namespace DS4MapperTest.ButtonActions
                 this.parentButtonAct = parentBtnAction;
                 privateState = parentBtnAction.privateState;
                 parentBtnAction.hasLayeredAction = true;
+                mappingId = parentBtnAction.mappingId;
 
                 parentBtnAction.NotifyPropertyChanged += ParentBtnAction_NotifyPropertyChanged;
 
@@ -1318,7 +1148,10 @@ namespace DS4MapperTest.ButtonActions
                             break;
                         case PropertyKeyStrings.FUNCTIONS:
                             actionFuncs.Clear();
-                            actionFuncs.AddRange(parentBtnAction.actionFuncs);
+                            foreach (ActionFunc func in parentBtnAction.actionFuncs)
+                            {
+                                actionFuncs.Add(ActionFuncCopyFactory.CopyFunc(func));
+                            }
                             useParentActions = true;
                             break;
                         default:
@@ -1367,7 +1200,10 @@ namespace DS4MapperTest.ButtonActions
                             break;
                         case PropertyKeyStrings.FUNCTIONS:
                             actionFuncs.Clear();
-                            actionFuncs.AddRange(parentBtnAction.actionFuncs);
+                            foreach (ActionFunc func in parentBtnAction.actionFuncs)
+                            {
+                                actionFuncs.Add(ActionFuncCopyFactory.CopyFunc(func));
+                            }
                             useParentActions = true;
                             break;
                         default:
@@ -1465,7 +1301,10 @@ namespace DS4MapperTest.ButtonActions
                     }
 
                     actionFuncs.Clear();
-                    actionFuncs.AddRange(parentButtonAct.actionFuncs);
+                    foreach (ActionFunc func in parentButtonAct.actionFuncs)
+                    {
+                        actionFuncs.Add(ActionFuncCopyFactory.CopyFunc(func));
+                    }
                     useParentActions = true;
                     break;
                 default:

@@ -28,6 +28,10 @@ namespace DS4MapperTest.SteamControllerLibrary
 
         public override DeviceReaderBase BaseReader => reader;
         public override InputDeviceType DeviceType => InputDeviceType.SteamController;
+        public override double GetNormalisedTriggerPosition(
+            TriggerSensitivityModifierTrigger trigger) => Math.Clamp(
+                (trigger == TriggerSensitivityModifierTrigger.Left ? currentMapperState.LT : currentMapperState.RT) / 32767.0,
+                0.0, 1.0);
 
         private StickDefinition lsDefintion;
         private TouchpadDefinition leftPadDefiniton;
@@ -145,11 +149,8 @@ namespace DS4MapperTest.SteamControllerLibrary
             lpadYAxis.PostInit();
 
             leftPadDefiniton = new TouchpadDefinition(lpadXAxis, lpadYAxis, TouchpadActionCodes.TouchL,
-                elapsedReference: device.BaseElapsedReference, mouseScale: 0.012 * 1.1, mouseOffset: 0.4,
+                elapsedReference: device.BaseElapsedReference, mouseScale: 1.0, mouseOffset: 0.0,
                 trackballScale: 0.000023);
-            leftPadDefiniton.throttleRelMouse = true;
-            leftPadDefiniton.throttleRelMousePower = TRACKPAD_MOUSE_POWER;
-            leftPadDefiniton.throttleRelMouseZone = TRACKPAD_MOUSE_DISPLACEMENT;
 
             TouchpadDefinition.TouchAxisData rpadXAxis = new TouchpadDefinition.TouchAxisData
             {
@@ -174,11 +175,8 @@ namespace DS4MapperTest.SteamControllerLibrary
             rpadYAxis.PostInit();
 
             rightPadDefinition = new TouchpadDefinition(rpadXAxis, rpadYAxis, TouchpadActionCodes.TouchR,
-                elapsedReference: device.BaseElapsedReference, mouseScale: 0.012 * 1.1, mouseOffset: 0.4,
+                elapsedReference: device.BaseElapsedReference, mouseScale: 1.0, mouseOffset: 0.0,
                 trackballScale: 0.000023);
-            rightPadDefinition.throttleRelMouse = true;
-            rightPadDefinition.throttleRelMousePower = TRACKPAD_MOUSE_POWER;
-            rightPadDefinition.throttleRelMouseZone = TRACKPAD_MOUSE_DISPLACEMENT;
 
             TriggerDefinition.TriggerAxisData ltAxis = new TriggerDefinition.TriggerAxisData
             {
@@ -513,6 +511,21 @@ namespace DS4MapperTest.SteamControllerLibrary
                     previousTouchFrameRightPad = eventFrame;
                 }
 
+                bool leftPassthru = currentLayer.touchpadActionDict["LeftTouchpad"].OutputsNativeTouch;
+                bool rightPassthru = currentLayer.touchpadActionDict["RightTouchpad"].OutputsNativeTouch;
+                bool leftTouchActive = leftPassthru && currentMapperState.LeftPad.Touch;
+                bool rightTouchActive = rightPassthru && currentMapperState.RightPad.Touch;
+
+                ApplyVirtualTouchState(
+                    leftTouchActive ? NormaliseTouchAxis(currentMapperState.LeftPad.X, -32768.0, 32767.0) * 0.5 : 0.0,
+                    leftTouchActive ? NormaliseTouchAxis(currentMapperState.LeftPad.Y, -32768.0, 32767.0) : 0.0,
+                    leftTouchActive,
+                    rightTouchActive ? 0.5 + (NormaliseTouchAxis(currentMapperState.RightPad.X, -32768.0, 32767.0) * 0.5) : 0.0,
+                    rightTouchActive ? NormaliseTouchAxis(currentMapperState.RightPad.Y, -32768.0, 32767.0) : 0.0,
+                    rightTouchActive,
+                    (leftPassthru && currentMapperState.LeftPad.Click) ||
+                    (rightPassthru && currentMapperState.RightPad.Click));
+
                 GyroMapAction gyroAct = currentLayer.gyroActionDict["Gyro"];
                 // Skip if duration is less than 10 ms
                 //if (currentMapperState.timeElapsed > 0.01)
@@ -536,7 +549,8 @@ namespace DS4MapperTest.SteamControllerLibrary
                         elapsedReference = device.BaseElapsedReference,
                     };
 
-                    PopulateStateGyro(ref gyroFrame);
+                    if (gyroAct.OutputsNativeGyro) PopulateStateGyro(ref gyroFrame);
+                    else ClearStateGyro();
                     gyroAct.Prepare(this, ref gyroFrame);
                     if (gyroAct.active)
                     {

@@ -64,7 +64,7 @@ namespace DS4MapperTest
                 if (!createdSkel)
                 {
                     MessageBox.Show($"Cannot create config folder structure in {appGlobal.appdatapath}. Exiting",
-                        "Test", MessageBoxButton.OK, MessageBoxImage.Error);
+                        "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
                     Current.Shutdown(1);
                     return;
                 }
@@ -86,6 +86,8 @@ namespace DS4MapperTest
             {
                 appGlobal.CreateControllerDeviceSettingsFile();
             }
+
+            ThemeService.Initialize(appGlobal);
 
             DispatcherUnhandledException += App_DispatcherUnhandledException;
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
@@ -129,9 +131,21 @@ namespace DS4MapperTest
 
         private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
         {
-            Logger logger = logHolder.Logger;
-            logger.Error($"Thread Crashed with message {e.Exception.Message}");
-            logger.Error(e.Exception.ToString());
+            Logger logger = logHolder?.Logger;
+            if (logger != null)
+            {
+                logger.Error($"Thread Crashed with message {e.Exception.Message}");
+                logger.Error(e.Exception.ToString());
+            }
+            else
+            {
+                Trace.WriteLine($"Unhandled dispatcher exception: {e.Exception}");
+            }
+
+            // Log and keep the app running. The app should only close when the
+            // user closes it manually, not because a UI-thread exception occurred
+            // (e.g. while handling a controller disconnect).
+            e.Handled = true;
         }
 
         private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
@@ -139,11 +153,18 @@ namespace DS4MapperTest
             Exception exp = e.ExceptionObject as Exception;
             bool canAccessMain = Current.Dispatcher.CheckAccess();
             //Trace.WriteLine($"CRASHED {help}");
-            Logger logger = logHolder.Logger;
+            Logger logger = logHolder?.Logger;
             if (e.IsTerminating)
             {
-                logger.Error($"Thread Crashed with message {exp.Message}");
-                logger.Error(exp.ToString());
+                if (logger != null && exp != null)
+                {
+                    logger.Error($"Thread Crashed with message {exp.Message}");
+                    logger.Error(exp.ToString());
+                }
+                else
+                {
+                    Trace.WriteLine($"Unhandled domain exception: {exp}");
+                }
 
                 if (canAccessMain)
                 {

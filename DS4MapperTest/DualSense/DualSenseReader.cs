@@ -29,6 +29,9 @@ namespace DS4MapperTest.DualSense
             DualSenseDevice device);
         public event DualSenseDeviceReportDelegate Report;
 
+        public override GyroCalibrationStatus GyroCalibrationStatus => gyroCalibrationUtil.Status;
+        public override void RequestGyroCalibration() => gyroCalibrationUtil.RequestCalibrationAfterDelay(1000);
+
         public DualSenseReader(DualSenseDevice device)
         {
             this.device = device;
@@ -47,7 +50,7 @@ namespace DS4MapperTest.DualSense
             device.PrepareOutputReport(outputReportBuffer);
             device.WriteReport(outputReportBuffer);
 
-            inputThread = new Thread(ReadInput);
+            inputThread = new Thread(() => RunReadInputSafely(ReadInput));
             inputThread.IsBackground = true;
             inputThread.Priority = ThreadPriority.AboveNormal;
             inputThread.Name = "DualSense Reader Thread";
@@ -128,6 +131,7 @@ namespace DS4MapperTest.DualSense
                     deltaElapsed = currentTime - previousTime;
                     lastElapsed = deltaElapsed * (1.0 / Stopwatch.Frequency) * 1000.0;
                     tempTimeElapsed = lastElapsed * .001;
+                    previousTime = currentTime;
 
                     utcNow = DateTime.UtcNow; // timestamp with UTC in case system time zone changes
                     current.PacketCounter = previous.PacketCounter + 1;
@@ -240,11 +244,8 @@ namespace DS4MapperTest.DualSense
                             ref AccelX, ref AccelY, ref AccelZ);
                     }
 
-                    if (gyroCalibrationUtil.gyroAverageTimer.IsRunning)
-                    {
-                        gyroCalibrationUtil.CalcSensorCamples(ref currentYaw, ref currentPitch, ref currentRoll,
-                            ref AccelX, ref AccelY, ref AccelZ);
-                    }
+                    gyroCalibrationUtil.Update(ref currentYaw, ref currentPitch, ref currentRoll,
+                        ref AccelX, ref AccelY, ref AccelZ);
 
                     currentYaw -= gyroCalibrationUtil.gyro_offset_x;
                     currentPitch -= gyroCalibrationUtil.gyro_offset_y;

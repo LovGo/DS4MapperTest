@@ -7,6 +7,8 @@ using DS4MapperTest.TouchpadActions;
 using DS4MapperTest.ViewModels.Common;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -289,12 +291,12 @@ namespace DS4MapperTest.ViewModels.TouchpadActionPropViewModels
 
         public bool ForceCenter
         {
-            get => action.ForcedCenter;
+            get => action.ForceCenter;
             set
             {
-                if (action.ForcedCenter == value) return;
+                if (action.ForceCenter == value) return;
 
-                action.ForcedCenter = value;
+                action.ForceCenter = value;
                 ForceCenterChanged?.Invoke(this, EventArgs.Empty);
                 ActionPropertyChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -375,6 +377,8 @@ namespace DS4MapperTest.ViewModels.TouchpadActionPropViewModels
                 return result;
             }
         }
+
+        public TouchpadStickRingBindItem RingBindItem { get; private set; }
 
         public bool SmoothingEnabled
         {
@@ -515,7 +519,7 @@ namespace DS4MapperTest.ViewModels.TouchpadActionPropViewModels
         public bool HighlightForceCenter
         {
             get => action.ParentAction == null ||
-                action.ChangedProperties.Contains(TouchpadStickAction.PropertyKeyStrings.FORCED_CENTER);
+                action.ChangedProperties.Contains(TouchpadStickAction.PropertyKeyStrings.FORCE_CENTER);
         }
         public event EventHandler HighlightForceCenterChanged;
 
@@ -596,6 +600,7 @@ namespace DS4MapperTest.ViewModels.TouchpadActionPropViewModels
             });
 
             PrepareModel();
+            RingBindItem = new TouchpadStickRingBindItem(this);
 
 
             NameChanged += TouchpadStickActionPropViewModel_NameChanged;
@@ -731,12 +736,12 @@ namespace DS4MapperTest.ViewModels.TouchpadActionPropViewModels
 
         private void TouchpadStickActionPropViewModel_ForceCenterChanged(object sender, EventArgs e)
         {
-            if (!this.action.ChangedProperties.Contains(TouchpadStickAction.PropertyKeyStrings.FORCED_CENTER))
+            if (!this.action.ChangedProperties.Contains(TouchpadStickAction.PropertyKeyStrings.FORCE_CENTER))
             {
-                this.action.ChangedProperties.Add(TouchpadStickAction.PropertyKeyStrings.FORCED_CENTER);
+                this.action.ChangedProperties.Add(TouchpadStickAction.PropertyKeyStrings.FORCE_CENTER);
             }
 
-            action.RaiseNotifyPropertyChange(mapper, TouchpadStickAction.PropertyKeyStrings.FORCED_CENTER);
+            action.RaiseNotifyPropertyChange(mapper, TouchpadStickAction.PropertyKeyStrings.FORCE_CENTER);
             HighlightForceCenterChanged?.Invoke(this, EventArgs.Empty);
         }
 
@@ -917,6 +922,52 @@ namespace DS4MapperTest.ViewModels.TouchpadActionPropViewModels
             });
         }
 
+        internal AxisDirButton EnsureEditableRingAction()
+        {
+            if (!usingRealAction)
+            {
+                ReplaceExistingLayerAction(this, EventArgs.Empty);
+            }
+
+            if (action.RingButton == null)
+            {
+                action.RingButton = new AxisDirButton(new OutputActionData(OutputActionData.ActionType.Empty, 0));
+            }
+
+            MarkRingChanged(action.RingButton);
+            return action.RingButton;
+        }
+
+        internal void MarkRingChanged(ButtonAction ringAction)
+        {
+            if (!action.ChangedProperties.Contains(TouchpadStickAction.PropertyKeyStrings.OUTER_RING_BUTTON))
+            {
+                action.ChangedProperties.Add(TouchpadStickAction.PropertyKeyStrings.OUTER_RING_BUTTON);
+            }
+
+            action.UseParentRingButton = false;
+            action.RaiseNotifyPropertyChange(mapper, TouchpadStickAction.PropertyKeyStrings.OUTER_RING_BUTTON);
+            FaceButtonBindingItem.MarkFunctionsChanged(ringAction);
+        }
+
+        internal EditFaceBindingContext PrepareRingEdit()
+        {
+            AxisDirButton ringAction = EnsureEditableRingAction();
+            ActionFunc func = ringAction.ActionFuncs.OfType<NormalPressFunc>().FirstOrDefault();
+            if (func == null)
+            {
+                func = new NormalPressFunc(new OutputActionData(OutputActionData.ActionType.Empty, 0));
+                mapper.ProcessMappingChangeAction(() =>
+                {
+                    ringAction.Release(mapper, ignoreReleaseActions: true);
+                    ringAction.ActionFuncs.Insert(0, func);
+                    MarkRingChanged(ringAction);
+                });
+            }
+
+            return new EditFaceBindingContext(mapper, ringAction, func);
+        }
+
         private void ReplaceExistingLayerAction(object sender, EventArgs e)
         {
             if (!usingRealAction)
@@ -990,6 +1041,144 @@ namespace DS4MapperTest.ViewModels.TouchpadActionPropViewModels
         {
             this.displayName = displayName;
             this.code = code;
+        }
+    }
+
+    public class TouchpadStickRingBindItem : INotifyPropertyChanged, IQuickBindTarget,
+        IActionOutputListOwner
+    {
+        private readonly TouchpadStickActionPropViewModel owner;
+
+        public event PropertyChangedEventHandler PropertyChanged;
+        public ObservableCollection<ActionOutputItem> OutputItems { get; } =
+            new ObservableCollection<ActionOutputItem>();
+
+        public TouchpadStickRingBindItem(TouchpadStickActionPropViewModel owner)
+        {
+            this.owner = owner;
+            RefreshOutputItems();
+        }
+
+        public string DisplayBind
+        {
+            get
+            {
+                string result = owner.Action.RingButton?.DescribeActions(((IQuickBindTarget)this).Mapper);
+                return string.IsNullOrWhiteSpace(result) ? "Unbound" : result;
+            }
+        }
+
+        Mapper IQuickBindTarget.Mapper => owner.Mapper;
+        string IQuickBindTarget.RowLabel => "Outer Ring";
+        string IQuickBindTarget.SlotLabel => "Regular Press";
+        bool IQuickBindTarget.IsComplexBinding =>
+            !QuickBindActionApplier.IsSimpleFunc(
+                owner.Action.RingButton?.ActionFuncs.OfType<NormalPressFunc>().FirstOrDefault());
+
+        EditFaceBindingContext IQuickBindTarget.GetEditContext()
+        {
+            return owner.PrepareRingEdit();
+        }
+
+        void IQuickBindTarget.NotifyBindingChanged()
+        {
+            owner.MarkRingChanged(owner.Action.RingButton);
+            Refresh();
+        }
+
+        Mapper IActionOutputListOwner.Mapper => owner.Mapper;
+        string IActionOutputListOwner.RowLabel => "Outer Ring";
+        string IActionOutputListOwner.SlotLabel => "Regular Press";
+        ActionFunc IActionOutputListOwner.Func => CurrentFunc;
+        EditFaceBindingContext IActionOutputListOwner.PrepareEdit(ActionOutputItem item) => PrepareEdit(item);
+        void IActionOutputListOwner.AddOutputAction() => AddOutputAction();
+        void IActionOutputListOwner.RemoveOutputAction(ActionOutputItem item) => RemoveOutputAction(item);
+        void IActionOutputListOwner.NotifyBindingChanged()
+        {
+            owner.MarkRingChanged(owner.Action.RingButton);
+            Refresh();
+        }
+
+        private ActionFunc CurrentFunc =>
+            owner.Action.RingButton?.ActionFuncs.OfType<NormalPressFunc>().FirstOrDefault();
+
+        public EditFaceBindingContext PrepareEdit(ActionOutputItem item)
+        {
+            EditFaceBindingContext ctx = owner.PrepareRingEdit();
+            int index = item?.Index ?? 0;
+            EnsureOutputSlot(ctx, index);
+            return new EditFaceBindingContext(ctx.Mapper, ctx.Action, ctx.Func, index);
+        }
+
+        public void AddOutputAction()
+        {
+            EditFaceBindingContext ctx = owner.PrepareRingEdit();
+            owner.Mapper.ProcessMappingChangeAction(() =>
+            {
+                ctx.Action.Release(owner.Mapper, ignoreReleaseActions: true);
+                ctx.Func.OutputActions.Add(new OutputActionData(OutputActionData.ActionType.Empty, 0));
+                owner.MarkRingChanged(ctx.Action);
+            });
+
+            RefreshOutputItems();
+        }
+
+        public void RemoveOutputAction(ActionOutputItem item)
+        {
+            if (item == null || item.Index <= 0)
+            {
+                return;
+            }
+
+            EditFaceBindingContext ctx = owner.PrepareRingEdit();
+            if (item.Index >= ctx.Func.OutputActions.Count)
+            {
+                return;
+            }
+
+            owner.Mapper.ProcessMappingChangeAction(() =>
+            {
+                ctx.Action.Release(owner.Mapper, ignoreReleaseActions: true);
+                ctx.Func.OutputActions.RemoveAt(item.Index);
+                owner.MarkRingChanged(ctx.Action);
+            });
+
+            RefreshOutputItems();
+        }
+
+        private void EnsureOutputSlot(EditFaceBindingContext ctx, int index)
+        {
+            if (ctx.Func.OutputActions.Count > index)
+            {
+                return;
+            }
+
+            owner.Mapper.ProcessMappingChangeAction(() =>
+            {
+                ctx.Action.Release(owner.Mapper, ignoreReleaseActions: true);
+                while (ctx.Func.OutputActions.Count <= index)
+                {
+                    ctx.Func.OutputActions.Add(new OutputActionData(OutputActionData.ActionType.Empty, 0));
+                }
+
+                owner.MarkRingChanged(ctx.Action);
+            });
+        }
+
+        private void RefreshOutputItems()
+        {
+            OutputItems.Clear();
+            int count = Math.Max(1, CurrentFunc?.OutputActions.Count ?? 0);
+            for (int i = 0; i < count; i++)
+            {
+                OutputItems.Add(new ActionOutputItem(this, i));
+            }
+        }
+
+        public void Refresh()
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayBind)));
+            RefreshOutputItems();
         }
     }
 }

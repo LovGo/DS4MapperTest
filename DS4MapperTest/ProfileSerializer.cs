@@ -8,8 +8,13 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Serialization;
+using DS4MapperTest.ActionUtil;
 using DS4MapperTest.ButtonActions;
+using DS4MapperTest.Common;
+using DS4MapperTest.GyroActions;
 using DS4MapperTest.MapperUtil;
+using DS4MapperTest.StickActions;
+using DS4MapperTest.TouchpadActions;
 
 namespace DS4MapperTest
 {
@@ -49,7 +54,7 @@ namespace DS4MapperTest
             get => settings.rainbowSecondsCycle;
             set => settings.rainbowSecondsCycle = Math.Clamp(value, 0, 100);
         }
-        public bool ShouldSerializeRainbowCycles()
+        public bool ShouldSerializeRainbowSecondsCycle()
         {
             return settings.Mode == LightbarMode.Rainbow;
         }
@@ -129,8 +134,6 @@ namespace DS4MapperTest
             return !string.IsNullOrEmpty(tempProfile.Description);
         }
 
-        public string Creator { get => tempProfile.Creator; set => tempProfile.Creator = value; }
-
         //[JsonProperty(Required = Required.Always)]
         public DateTime CreationDate { get => tempProfile.CreationDate; set => tempProfile.CreationDate = value; }
 
@@ -148,6 +151,50 @@ namespace DS4MapperTest
         {
             get => tempProfile.OutputGamepadSettings;
             set => tempProfile.OutputGamepadSettings = value;
+        }
+
+        private bool calibExplicitlySet = false;
+
+        public double CalibRwc
+        {
+            get => tempProfile.CalibRwc;
+            set { tempProfile.CalibRwc = value; calibExplicitlySet = true; }
+        }
+
+        public double CalibInGameSens
+        {
+            get => tempProfile.CalibInGameSens;
+            set { tempProfile.CalibInGameSens = value; calibExplicitlySet = true; }
+        }
+
+        public double CalibCounts
+        {
+            get => tempProfile.CalibCounts;
+            set { tempProfile.CalibCounts = value; calibExplicitlySet = true; }
+        }
+
+        [JsonConverter(typeof(StringEnumConverter))]
+        public CalibMode CalibMode
+        {
+            get => tempProfile.CalibMode;
+            set => tempProfile.CalibMode = value;
+        }
+        public bool ShouldSerializeCalibMode()
+        {
+            return tempProfile.CalibMode == DS4MapperTest.CalibMode.CountsMode;
+        }
+
+        private bool calibPresetExplicitlySet = false;
+        public string CalibPreset
+        {
+            get => tempProfile.CalibPresetName;
+            set
+            {
+                tempProfile.CalibPresetName =
+                    GameCalibPreset.FindByName(value)?.Name ??
+                    GameCalibPreset.Custom.Name;
+                calibPresetExplicitlySet = true;
+            }
         }
 
         private LightbarSettingsSerializer lightbarSerializer;
@@ -258,6 +305,162 @@ namespace DS4MapperTest
                 serializer.PopulateProfileSet(tempProfile);
                 tempProfile.ActionSets.Add(serializer.TempActionSet);
             }
+
+            // If calibration was not in the JSON, seed it from the first GyroMouse or CameraTurn action.
+            // Must iterate LayerActions (populated by PopulateLayer) not normalActionDict, which is
+            // still empty at this point — SyncActions() hasn't been called yet.
+            if (!calibExplicitlySet)
+            {
+                bool found = false;
+                foreach (ActionSet set in tempProfile.ActionSets)
+                {
+                    foreach (ActionLayer layer in set.ActionLayers)
+                    {
+                        foreach (MapAction mapAction in layer.LayerActions)
+                        {
+                            if (mapAction is GyroMouse gyroMouse)
+                            {
+                                tempProfile.CalibRwc = gyroMouse.mouseParams.realWorldCalibration;
+                                tempProfile.CalibInGameSens = gyroMouse.mouseParams.inGameSens;
+                                if (gyroMouse.mouseParams.inGameSens > 0.0)
+                                    tempProfile.CalibCounts = gyroMouse.mouseParams.realWorldCalibration * 360.0 / gyroMouse.mouseParams.inGameSens;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (found) break;
+                    }
+                    if (found) break;
+                }
+
+                if (!found)
+                {
+                    foreach (ActionSet set in tempProfile.ActionSets)
+                    {
+                        foreach (ActionLayer layer in set.ActionLayers)
+                        {
+                            foreach (MapAction mapAction in layer.LayerActions)
+                            {
+                                if (mapAction is ButtonAction btnAction)
+                                {
+                                    foreach (ActionFunc func in btnAction.ActionFuncs)
+                                    {
+                                        foreach (OutputActionData data in func.OutputActions)
+                                        {
+                                            if (data.OutputType == OutputActionData.ActionType.CameraTurn)
+                                            {
+                                                tempProfile.CalibCounts = data.cameraTurnCounts360;
+                                                tempProfile.CalibInGameSens = 1.0;
+                                                tempProfile.CalibRwc = data.cameraTurnCounts360 / 360.0;
+                                                found = true;
+                                                break;
+                                            }
+                                        }
+                                        if (found) break;
+                                    }
+                                }
+                                if (found) break;
+                            }
+                            if (found) break;
+                        }
+                        if (found) break;
+                    }
+                }
+
+                if (!found)
+                {
+                    foreach (ActionSet set in tempProfile.ActionSets)
+                    {
+                        foreach (ActionLayer layer in set.ActionLayers)
+                        {
+                            foreach (MapAction mapAction in layer.LayerActions)
+                            {
+                                if (mapAction is StickFlickStick sfs)
+                                {
+                                    tempProfile.CalibRwc = sfs.RealWorldCalibration;
+                                    tempProfile.CalibInGameSens = sfs.InGameSens;
+                                    if (sfs.InGameSens > 0.0)
+                                        tempProfile.CalibCounts = sfs.RealWorldCalibration * 360.0 / sfs.InGameSens;
+                                    found = true;
+                                    break;
+                                }
+                                if (mapAction is TouchpadFlickStick tfs)
+                                {
+                                    tempProfile.CalibRwc = tfs.RealWorldCalibration;
+                                    tempProfile.CalibInGameSens = tfs.InGameSens;
+                                    if (tfs.InGameSens > 0.0)
+                                        tempProfile.CalibCounts = tfs.RealWorldCalibration * 360.0 / tfs.InGameSens;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (found) break;
+                        }
+                        if (found) break;
+                    }
+                }
+            }
+
+            if (!calibPresetExplicitlySet)
+            {
+                tempProfile.CalibPresetName =
+                    GameCalibPreset.MatchByRwc(tempProfile.CalibRwc)?.Name ??
+                    GameCalibPreset.Custom.Name;
+            }
+
+            // Push profile calibration to all GyroMouse and CameraTurn action instances.
+            // Must use LayerActions — normalActionDict is empty until SyncActions() runs after
+            // this method returns.
+            foreach (ActionSet set in tempProfile.ActionSets)
+            {
+                foreach (ActionLayer layer in set.ActionLayers)
+                {
+                    foreach (MapAction mapAction in layer.LayerActions)
+                    {
+                        if (mapAction is GyroMouse gyroMouse)
+                        {
+                            gyroMouse.mouseParams.realWorldCalibration = tempProfile.CalibRwc;
+                            gyroMouse.mouseParams.inGameSens = tempProfile.CalibInGameSens;
+                            if (!gyroMouse.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.REAL_WORLD_CALIBRATION))
+                                gyroMouse.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.REAL_WORLD_CALIBRATION);
+                            if (!gyroMouse.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.IN_GAME_SENS))
+                                gyroMouse.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.IN_GAME_SENS);
+                        }
+
+                        if (mapAction is ButtonAction ba)
+                        {
+                            foreach (ActionFunc func in ba.ActionFuncs)
+                            {
+                                foreach (OutputActionData data in func.OutputActions)
+                                {
+                                    if (data.OutputType == OutputActionData.ActionType.CameraTurn)
+                                        data.cameraTurnCounts360 = tempProfile.CalibCounts;
+                                }
+                            }
+                        }
+
+                        if (mapAction is StickFlickStick sfs)
+                        {
+                            sfs.RealWorldCalibration = tempProfile.CalibRwc;
+                            sfs.InGameSens = tempProfile.CalibInGameSens;
+                            if (!sfs.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.REAL_WORLD_CALIBRATION))
+                                sfs.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.REAL_WORLD_CALIBRATION);
+                            if (!sfs.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.IN_GAME_SENS))
+                                sfs.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.IN_GAME_SENS);
+                        }
+
+                        if (mapAction is TouchpadFlickStick tfs)
+                        {
+                            tfs.RealWorldCalibration = tempProfile.CalibRwc;
+                            tfs.InGameSens = tempProfile.CalibInGameSens;
+                            if (!tfs.ChangedProperties.Contains(TouchpadFlickStick.PropertyKeyStrings.REAL_WORLD_CALIBRATION))
+                                tfs.ChangedProperties.Add(TouchpadFlickStick.PropertyKeyStrings.REAL_WORLD_CALIBRATION);
+                            if (!tfs.ChangedProperties.Contains(TouchpadFlickStick.PropertyKeyStrings.IN_GAME_SENS))
+                                tfs.ChangedProperties.Add(TouchpadFlickStick.PropertyKeyStrings.IN_GAME_SENS);
+                        }
+                    }
+                }
+            }
         }
 
         public bool ShouldSerializeActionMappings()
@@ -274,13 +477,11 @@ namespace DS4MapperTest
         [OnDeserializing]
         internal void OnDeserializingMethod(StreamingContext context)
         {
-            Trace.WriteLine("IN ProfileSerializer.OnDeserializingMethod");
         }
 
         [OnDeserialized]
         internal void OnDeserializedMethod(StreamingContext context)
         {
-            Trace.WriteLine("IN ProfileSerializer.OnDeserializedMethod");
         }
     }
 
@@ -380,7 +581,6 @@ namespace DS4MapperTest
         [JsonConstructor]
         public ActionSetSerializer()
         {
-            Console.WriteLine("FUCKERY");
         }
 
         public ActionSetSerializer(Profile tempProfile, ActionSet tempActionSet)
@@ -409,7 +609,6 @@ namespace DS4MapperTest
         [OnDeserializing]
         internal void OnDeserializingMethod(StreamingContext context)
         {
-            Trace.WriteLine("IN ActionSetSerializer.OnDeserializingMethod");
             currentSet = tempActionSet;
             topActionLayer = null;
         }
@@ -417,7 +616,6 @@ namespace DS4MapperTest
         [OnDeserialized]
         internal void OnDeserializedMethod(StreamingContext context)
         {
-            Trace.WriteLine("IN ActionSetSerializer.OnDeserializedMethod");
             currentSet = null;
             topActionLayer = null;
         }
@@ -480,7 +678,6 @@ namespace DS4MapperTest
         [JsonConstructor]
         public ActionLayerSerializer()
         {
-            Trace.WriteLine("LKJDFLKJDLKJ");
         }
 
         public ActionLayerSerializer(ActionSet tempActionSet, ActionLayer layer)
@@ -524,7 +721,6 @@ namespace DS4MapperTest
         [OnDeserializing]
         internal void OnDeserializingMethod(StreamingContext context)
         {
-            Trace.WriteLine("IN ActionLayerSerializer.OnDeserializingMethod");
             parentActionSet = ActionSetSerializer.CurrentSet;
             currentActionIndex = 0;
         }
@@ -532,7 +728,6 @@ namespace DS4MapperTest
         [OnDeserialized]
         internal void OnDeserializedMethod(StreamingContext context)
         {
-            Trace.WriteLine("IN ActionLayerSerializer.OnDeserializedMethod");
             parentActionSet = null;
             if (ActionSetSerializer.TopActionLayer == null)
             {

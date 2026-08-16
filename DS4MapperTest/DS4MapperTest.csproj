@@ -10,9 +10,10 @@
     <EnableNETAnalyzers>False</EnableNETAnalyzers>
     <RunAnalyzersDuringLiveAnalysis>False</RunAnalyzersDuringLiveAnalysis>
     <ServerGarbageCollection>true</ServerGarbageCollection>
-    <AssemblyVersion>0.0.32</AssemblyVersion>
-    <FileVersion>0.0.32</FileVersion>
-    <Version>0.0.32</Version>
+    <AssemblyVersion>1.0.0</AssemblyVersion>
+    <FileVersion>1.0.0</FileVersion>
+    <Version>1.0.0-beta</Version>
+    <ApplicationIcon>images\DS4MapperTestAppIcon.ico</ApplicationIcon>
     <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
     <Platform Condition="'$(Platform)' == ''">x64</Platform>
     <Configurations>Debug;Release;Debug Tests;Release Tests</Configurations>
@@ -39,6 +40,13 @@
   <ItemGroup>
     <None Remove="libs\x64\**" Condition="'$(Platform)' != 'x64'" />
     <None Remove="libs\x86\**" Condition="'$(Platform)' != 'x86'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Lets the unit test project call a small number of internal test
+         hooks (e.g. Mapper.AcquireSharedMouseButton/ReleaseSharedMouseButton)
+         directly instead of widening them to public. -->
+    <InternalsVisibleTo Include="DS4MapperUnitTests" />
   </ItemGroup>
 
   <!-- Apparently the None tags are needed as well as the Resource tags.
@@ -78,6 +86,14 @@
     <None Update="NLog.config">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <EmbeddedResource Include="..\template_profiles\**\*">
+      <Link>template_profiles\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </EmbeddedResource>
   </ItemGroup>
+
+  <Target Name="RemoveLegacyTemplateProfilesOutput" AfterTargets="Build">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Remove-Item -LiteralPath '$(TargetDir)template_profiles' -Recurse -Force -ErrorAction SilentlyContinue&quot;"
+          Condition="Exists('$(TargetDir)template_profiles')" />
+  </Target>
 
 </Project>

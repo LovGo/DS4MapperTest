@@ -14,6 +14,7 @@ using System.Runtime.InteropServices;
 using WpfScreenHelper;
 using System.Windows;
 using System.Threading;
+using System.Reflection;
 
 namespace DS4MapperTest
 {
@@ -164,15 +165,23 @@ namespace DS4MapperTest
                 {
                     string exampleDevProfilesPath = Path.Combine(exedirpath, TEMPLATE_PROFILES_DIRNAME, devTemplateFolder);
                     string destDevProfilePath = Path.Combine(appdatapath, PROFILES_FOLDER_NAME, devTemplateFolder);
-                    //if (!Directory.Exists(destSCProfilePath))
-                    // Check if profiles dir is empty
-                    if (Directory.Exists(exampleDevProfilesPath) && Directory.Exists(destDevProfilePath) &&
-                        !Directory.EnumerateFileSystemEntries(destDevProfilePath).Any())
+                    if (Directory.Exists(destDevProfilePath))
                     {
-                        foreach (string file in Directory.EnumerateFiles(exampleDevProfilesPath))
+                        if (!CopyBundledExampleProfiles(devTemplateFolder, destDevProfilePath))
                         {
-                            string destFilePath = Path.Combine(destDevProfilePath, Path.GetFileName(file));
-                            File.Copy(file, destFilePath);
+                            if (!Directory.Exists(exampleDevProfilesPath))
+                            {
+                                continue;
+                            }
+
+                            foreach (string file in Directory.EnumerateFiles(exampleDevProfilesPath))
+                            {
+                                string destFilePath = Path.Combine(destDevProfilePath, Path.GetFileName(file));
+                                if (!File.Exists(destFilePath))
+                                {
+                                    File.Copy(file, destFilePath);
+                                }
+                            }
                         }
                     }
                 }
@@ -183,6 +192,39 @@ namespace DS4MapperTest
             }
 
             return result;
+        }
+
+        private bool CopyBundledExampleProfiles(string devTemplateFolder, string destDevProfilePath)
+        {
+            Assembly assembly = typeof(AppGlobalData).Assembly;
+            string assemblyName = assembly.GetName().Name;
+            string resourcePrefix = $"{assemblyName}.{TEMPLATE_PROFILES_DIRNAME}.{devTemplateFolder}.";
+
+            string[] resourceNames = assembly.GetManifestResourceNames()
+                .Where(name => name.StartsWith(resourcePrefix, StringComparison.Ordinal))
+                .ToArray();
+
+            foreach (string resourceName in resourceNames)
+            {
+                string fileName = resourceName.Substring(resourcePrefix.Length);
+                string destFilePath = Path.Combine(destDevProfilePath, fileName);
+
+                if (File.Exists(destFilePath))
+                {
+                    continue;
+                }
+
+                using Stream resourceStream = assembly.GetManifestResourceStream(resourceName);
+                if (resourceStream == null)
+                {
+                    continue;
+                }
+
+                using FileStream destStream = File.Create(destFilePath);
+                resourceStream.CopyTo(destStream);
+            }
+
+            return resourceNames.Length > 0;
         }
 
         public void RefreshBaseDriverInfo()
@@ -363,6 +405,17 @@ namespace DS4MapperTest
             fakerInputVersion = FakerInputVersion();
         }
 
+        public MouseOutputRoutingAvailabilitySnapshot GetMouseOutputRoutingAvailabilitySnapshot()
+        {
+            return new MouseOutputRoutingAvailabilitySnapshot(
+                sendInputAvailable: true,
+                fakerInputMouseAvailable: fakerInputInstalled,
+                viiperMouse1Available: false,
+                viiperMouse2Available: false,
+                viiperMouse3Available: false,
+                viiperAbsoluteMouseSupported: false);
+        }
+
         private static string FakerInputVersion()
         {
             // Start with BLANK_FAKERINPUT_VERSION for result
@@ -451,14 +504,7 @@ namespace DS4MapperTest
                 ]
             }";
 
-            using (StreamWriter swriter = new StreamWriter(controllerConfigsPath))
-            using (JsonTextWriter jwriter = new JsonTextWriter(swriter))
-            {
-                jwriter.Formatting = Formatting.Indented;
-                jwriter.Indentation = 2;
-
-                JObject.Parse(newJson).WriteTo(jwriter);
-            }
+            AtomicFileWriter.WriteJson(controllerConfigsPath, JObject.Parse(newJson));
         }
 
         public void LoadControllerDeviceSettings(InputDeviceBase testDev,
@@ -615,21 +661,9 @@ namespace DS4MapperTest
                 }
             }
 
-            using (FileStream fs = new FileStream(controllerConfigsPath,
-               FileMode.Truncate, FileAccess.Write))
+            if (tempRootJObj != null)
             {
-                if (tempRootJObj != null)
-                {
-                    using (StreamWriter swriter = new StreamWriter(fs))
-                    using (JsonTextWriter jwriter = new JsonTextWriter(swriter))
-                    {
-                        jwriter.Formatting = Formatting.Indented;
-                        jwriter.Indentation = 2;
-                        string temp = tempRootJObj.ToString();
-                        //Trace.WriteLine(temp);
-                        tempRootJObj.WriteTo(jwriter);
-                    }
-                }
+                AtomicFileWriter.WriteJson(controllerConfigsPath, tempRootJObj);
             }
         }
 
@@ -652,15 +686,7 @@ namespace DS4MapperTest
 
             if (!string.IsNullOrEmpty(tempOutJson))
             {
-                using (StreamWriter writer = new StreamWriter(blankProfilePath))
-                using (JsonTextWriter jwriter = new JsonTextWriter(writer))
-                {
-                    jwriter.Formatting = Formatting.Indented;
-                    jwriter.Indentation = 2;
-                    JObject tempJObj = JObject.Parse(tempOutJson);
-                    tempJObj.WriteTo(jwriter);
-                    //writer.Write(tempOutJson);
-                }
+                AtomicFileWriter.WriteJson(blankProfilePath, JObject.Parse(tempOutJson));
             }
 
             //using (FileStream fs = new FileStream(blankProfilePath,

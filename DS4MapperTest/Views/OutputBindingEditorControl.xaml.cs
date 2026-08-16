@@ -24,8 +24,18 @@ namespace DS4MapperTest.Views
     /// </summary>
     public partial class OutputBindingEditorControl : UserControl
     {
+        public static readonly DependencyProperty ShowDoneButtonProperty =
+            DependencyProperty.Register(nameof(ShowDoneButton), typeof(bool),
+                typeof(OutputBindingEditorControl), new PropertyMetadata(true));
+
         private ButtonActionEditViewModel buttonActionEditVM;
         public event EventHandler Finished;
+
+        public bool ShowDoneButton
+        {
+            get => (bool)GetValue(ShowDoneButtonProperty);
+            set => SetValue(ShowDoneButtonProperty, value);
+        }
 
         public OutputBindingEditorControl()
         {
@@ -34,7 +44,14 @@ namespace DS4MapperTest.Views
 
         public void PostInit(Mapper mapper, ButtonAction currentAction, ActionFunc func)
         {
-            buttonActionEditVM = new ButtonActionEditViewModel(mapper, currentAction, func);
+            PostInit(mapper, currentAction, func, 0);
+        }
+
+        public void PostInit(Mapper mapper, ButtonAction currentAction, ActionFunc func,
+            int initialSlotIndex)
+        {
+            buttonActionEditVM = new ButtonActionEditViewModel(mapper, currentAction, func,
+                initialSlotIndex);
 
             DataContext = buttonActionEditVM;
         }
@@ -60,11 +77,46 @@ namespace DS4MapperTest.Views
 
         private void UnboundBtn_Click(object sender, RoutedEventArgs e)
         {
+            AssignUnboundSelectedSlot();
+        }
+
+        public void AssignUnboundSelectedSlot()
+        {
             DataContext = null;
 
             buttonActionEditVM.AssignUnbound();
 
             DataContext = buttonActionEditVM;
+        }
+
+        private void OutputTypeTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!ReferenceEquals(e.OriginalSource, sender))
+            {
+                return;
+            }
+
+            if (buttonActionEditVM == null)
+            {
+                return;
+            }
+
+            if (flickTurnBindTab?.IsSelected == true)
+            {
+                DataContext = null;
+
+                buttonActionEditVM.AssignCameraTurn();
+
+                DataContext = buttonActionEditVM;
+            }
+            else if (recalibrateGyroBindTab?.IsSelected == true)
+            {
+                DataContext = null;
+
+                buttonActionEditVM.AssignRecalibrateGyro();
+
+                DataContext = buttonActionEditVM;
+            }
         }
     }
 }

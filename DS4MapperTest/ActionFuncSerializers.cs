@@ -76,6 +76,7 @@ namespace DS4MapperTest
                 get => pressFunc.toggleEnabled;
                 set => pressFunc.toggleEnabled = value;
             }
+
             public bool ShouldSerializeToggle()
             {
                 return pressFunc.toggleEnabled == true;
@@ -186,6 +187,12 @@ namespace DS4MapperTest
                 get => holdPressFunc.toggleEnabled;
                 set => holdPressFunc.toggleEnabled = value;
             }
+            public bool Interruptable
+            {
+                get => holdPressFunc.InterruptRegularPress;
+                set => holdPressFunc.InterruptRegularPress = value;
+            }
+            public bool ShouldSerializeInterruptable() => !holdPressFunc.InterruptRegularPress;
             public bool ShouldSerializeToggle()
             {
                 return holdPressFunc.toggleEnabled == true;
@@ -215,6 +222,7 @@ namespace DS4MapperTest
             {
                 return holdPressFunc.DurationMs == 30 &&
                     holdPressFunc.toggleEnabled == false &&
+                    holdPressFunc.InterruptRegularPress == true &&
                     holdPressFunc.TurboEnabled == false &&
                     holdPressFunc.TurboDurationMs == NormalPressFunc.DEFAULT_TURBO_DURATION_MS;
             }
@@ -266,30 +274,102 @@ namespace DS4MapperTest
         }
     }
 
-    public class ReleaseFuncSerializer: ActionFuncSerializer
+    public class DoublePressFuncSerializer : ActionFuncSerializer
     {
-        public class ReleaseFuncSettings
+        public class DoublePressSettings
         {
-            private ReleaseFunc releaseFuncInstance;
-            public int Duration
+            private DoublePressFunc doublePressFunc;
+
+            public int DurationMs
             {
-                get => releaseFuncInstance.DurationMs;
-                set => releaseFuncInstance.DurationMs = value;
+                get => doublePressFunc.DurationMs;
+                set => doublePressFunc.DurationMs = value;
             }
-            public bool ShouldSerializeDuration()
+            public bool ShouldSerializeDurationMs()
             {
-                return releaseFuncInstance.DurationMs != 0;
+                return doublePressFunc.DurationMs != 0;
+            }
+
+            public bool Toggle
+            {
+                get => doublePressFunc.toggleEnabled;
+                set => doublePressFunc.toggleEnabled = value;
             }
 
             public bool Interruptable
             {
-                get => releaseFuncInstance.interruptable;
-                set => releaseFuncInstance.interruptable = value;
+                get => doublePressFunc.InterruptRegularPress;
+                set => doublePressFunc.InterruptRegularPress = value;
             }
-            public bool ShouldSerializeInterruptable()
+            public bool ShouldSerializeInterruptable() => !doublePressFunc.InterruptRegularPress;
+            public bool ShouldSerializeToggle()
             {
-                return releaseFuncInstance.interruptable == true;
+                return doublePressFunc.toggleEnabled == true;
             }
+
+            public bool IsDefault()
+            {
+                return doublePressFunc.DurationMs == 0 &&
+                    doublePressFunc.toggleEnabled == false &&
+                    doublePressFunc.InterruptRegularPress == true;
+            }
+
+            public DoublePressSettings(DoublePressFunc actionFunc)
+            {
+                doublePressFunc = actionFunc;
+            }
+        }
+
+        private const string typeString = "DoublePress";
+        private DoublePressFunc doublePressFunc = new DoublePressFunc();
+        private DoublePressSettings settings;
+
+        [JsonIgnore]
+        public DoublePressFunc DoublePressFunc
+        {
+            get => doublePressFunc; set => doublePressFunc = value;
+        }
+
+        public DoublePressSettings Settings
+        {
+            get => settings;
+            set => settings = value;
+        }
+        public bool ShouldSerializeSettings()
+        {
+            return !settings.IsDefault();
+        }
+
+        public DoublePressFuncSerializer() : base()
+        {
+            this.type = typeString;
+            actionFunc = doublePressFunc;
+            settings = new DoublePressSettings(doublePressFunc);
+        }
+
+        public DoublePressFuncSerializer(ActionFunc tempFunc) : base(tempFunc)
+        {
+            if (tempFunc is DoublePressFunc temp)
+            {
+                doublePressFunc = temp;
+                this.type = typeString;
+                actionFunc = doublePressFunc;
+                settings = new DoublePressSettings(doublePressFunc);
+
+                PopulateOutputActionData();
+            }
+        }
+    }
+
+    public class ReleaseFuncSerializer : ActionFuncSerializer
+    {
+        // Old profiles may still contain "Duration" (the removed Min Duration) and
+        // "Interruptable" - both are simply not mapped to any property here, so
+        // Newtonsoft's default MissingMemberHandling.Ignore drops them silently on load.
+        // Neither is ever written back out by the new implementation.
+        public class ReleaseFuncSettings
+        {
+            private ReleaseFunc releaseFuncInstance;
 
             public int DelayDuration
             {
@@ -301,11 +381,42 @@ namespace DS4MapperTest
                 return releaseFuncInstance.DelayDurationMs != ReleaseFunc.DELAY_DURATION_DEFAULT;
             }
 
+            public bool Toggle
+            {
+                get => releaseFuncInstance.toggleEnabled;
+                set => releaseFuncInstance.toggleEnabled = value;
+            }
+            public bool ShouldSerializeToggle()
+            {
+                return releaseFuncInstance.toggleEnabled == true;
+            }
+
+            public bool MaxHoldTimeEnabled
+            {
+                get => releaseFuncInstance.MaxHoldTimeEnabled;
+                set => releaseFuncInstance.MaxHoldTimeEnabled = value;
+            }
+            public bool ShouldSerializeMaxHoldTimeEnabled()
+            {
+                return releaseFuncInstance.MaxHoldTimeEnabled == true;
+            }
+
+            public int MaxHoldTimeMs
+            {
+                get => releaseFuncInstance.MaxHoldTimeMs;
+                set => releaseFuncInstance.MaxHoldTimeMs = value;
+            }
+            public bool ShouldSerializeMaxHoldTimeMs()
+            {
+                return releaseFuncInstance.MaxHoldTimeMs != ReleaseFunc.MAX_HOLD_TIME_DEFAULT;
+            }
+
             public bool IsDefault()
             {
-                return releaseFuncInstance.DurationMs == 0 &&
-                    releaseFuncInstance.DelayDurationMs == ReleaseFunc.DELAY_DURATION_DEFAULT &&
-                    releaseFuncInstance.interruptable == false;
+                return releaseFuncInstance.DelayDurationMs == ReleaseFunc.DELAY_DURATION_DEFAULT &&
+                    releaseFuncInstance.toggleEnabled == false &&
+                    releaseFuncInstance.MaxHoldTimeEnabled == false &&
+                    releaseFuncInstance.MaxHoldTimeMs == ReleaseFunc.MAX_HOLD_TIME_DEFAULT;
             }
 
             public ReleaseFuncSettings(ReleaseFunc funcInstance)
@@ -319,7 +430,7 @@ namespace DS4MapperTest
         private ReleaseFuncSettings settings;
 
         [JsonIgnore]
-        public ReleaseFunc RelaseFuncInstance
+        public ReleaseFunc ReleaseFuncInstance
         {
             get => releaseFuncInstance; set => releaseFuncInstance = value;
         }
@@ -444,7 +555,7 @@ namespace DS4MapperTest
         {
             private ChordedPressFunc chordedPressFunc;
 
-            [JsonIgnore]
+            [JsonConverter(typeof(StringEnumConverter))]
             public JoypadActionCodes Trigger
             {
                 get => chordedPressFunc.TriggerButton;
@@ -515,6 +626,94 @@ namespace DS4MapperTest
                 this.type = typeString;
                 actionFunc = chordedPressFunc;
                 settings = new ChordedPressSettings(chordedPressFunc);
+
+                PopulateOutputActionData();
+            }
+        }
+    }
+
+    public class SimPressFuncSerializer : ActionFuncSerializer
+    {
+        public class SimPressSettings
+        {
+            private SimPressFunc simPressFunc;
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public JoypadActionCodes Trigger
+            {
+                get => simPressFunc.TriggerButton;
+                set
+                {
+                    simPressFunc.TriggerButton = value;
+                }
+            }
+            public bool ShouldSerializeTrigger()
+            {
+                return simPressFunc.TriggerButton != JoypadActionCodes.Empty;
+            }
+
+            public int SimPressTimeMs
+            {
+                get => simPressFunc.SimPressTimeMs;
+                set => simPressFunc.SimPressTimeMs = value;
+            }
+            public bool ShouldSerializeSimPressTimeMs()
+            {
+                return simPressFunc.SimPressTimeMs != ActionUtil.SimPressFunc.DEFAULT_SIM_PRESS_MS;
+            }
+
+            public bool Interruptable
+            {
+                get => simPressFunc.InterruptRegularPress;
+                set => simPressFunc.InterruptRegularPress = value;
+            }
+            public bool ShouldSerializeInterruptable() => !simPressFunc.InterruptRegularPress;
+
+            public bool IsDefault()
+            {
+                return simPressFunc.TriggerButton == JoypadActionCodes.Empty &&
+                    simPressFunc.SimPressTimeMs == ActionUtil.SimPressFunc.DEFAULT_SIM_PRESS_MS &&
+                    simPressFunc.InterruptRegularPress == true;
+            }
+
+            public SimPressSettings(SimPressFunc actionFunc)
+            {
+                this.simPressFunc = actionFunc;
+            }
+        }
+
+        private const string typeString = "SimPress";
+
+        private SimPressFunc simPressFunc = new SimPressFunc();
+        [JsonIgnore]
+        public SimPressFunc SimPressFuncInstance { get => simPressFunc; set => simPressFunc = value; }
+
+        private SimPressSettings settings;
+        public SimPressSettings Settings
+        {
+            get => settings;
+            set => settings = value;
+        }
+        public bool ShouldSerializeSettings()
+        {
+            return !settings.IsDefault();
+        }
+
+        public SimPressFuncSerializer() : base()
+        {
+            this.type = typeString;
+            actionFunc = simPressFunc;
+            settings = new SimPressSettings(simPressFunc);
+        }
+
+        public SimPressFuncSerializer(ActionFunc tempFunc) : base(tempFunc)
+        {
+            if (tempFunc is SimPressFunc temp)
+            {
+                simPressFunc = temp;
+                this.type = typeString;
+                actionFunc = simPressFunc;
+                settings = new SimPressSettings(simPressFunc);
 
                 PopulateOutputActionData();
             }
@@ -626,9 +825,30 @@ namespace DS4MapperTest
         {
             private DistanceFunc distanceFunc;
 
+            public string Name
+            {
+                get => distanceFunc.Name;
+                set => distanceFunc.Name = value;
+            }
+            public bool ShouldSerializeName()
+            {
+                return !string.IsNullOrEmpty(distanceFunc.Name);
+            }
+
+            public double Distance
+            {
+                get => distanceFunc.distance;
+                set => distanceFunc.distance = Math.Clamp(value, 0.0, 1.0);
+            }
+            public bool ShouldSerializeDistance()
+            {
+                return distanceFunc.distance != DistanceFunc.DEFAULT_DISTANCE;
+            }
+
             public bool IsDefault()
             {
-                return true;
+                return string.IsNullOrEmpty(distanceFunc.Name) &&
+                    distanceFunc.distance == DistanceFunc.DEFAULT_DISTANCE;
             }
 
             public DistanceSettings(DistanceFunc actionFunc)
@@ -709,6 +929,12 @@ namespace DS4MapperTest
                     holdInstance.ActionDataSerializers.RemoveAll((item) => item == null);
                     resultInstance = holdInstance;
                     break;
+                case "DoublePress":
+                    DoublePressFuncSerializer doublePressInstance = new DoublePressFuncSerializer();
+                    JsonConvert.PopulateObject(j.ToString(), doublePressInstance);
+                    doublePressInstance.ActionDataSerializers.RemoveAll((item) => item == null);
+                    resultInstance = doublePressInstance;
+                    break;
                 case "Release":
                     ReleaseFuncSerializer releaseInstance = new ReleaseFuncSerializer();
                     JsonConvert.PopulateObject(j.ToString(), releaseInstance);
@@ -726,6 +952,12 @@ namespace DS4MapperTest
                     JsonConvert.PopulateObject(j.ToString(), chordedInstance);
                     chordedInstance.ActionDataSerializers.RemoveAll((item) => item == null);
                     resultInstance = chordedInstance;
+                    break;
+                case "SimPress":
+                    SimPressFuncSerializer simPressInstance = new SimPressFuncSerializer();
+                    JsonConvert.PopulateObject(j.ToString(), simPressInstance);
+                    simPressInstance.ActionDataSerializers.RemoveAll((item) => item == null);
+                    resultInstance = simPressInstance;
                     break;
                 case "Analog":
                     AnalogFuncSerializer analogInstance = new AnalogFuncSerializer();
@@ -770,6 +1002,13 @@ namespace DS4MapperTest
                     }
 
                     break;
+                case "DoublePress":
+                    if (current is DoublePressFuncSerializer doublePressFuncSerializer)
+                    {
+                        serializer.Serialize(writer, doublePressFuncSerializer);
+                    }
+
+                    break;
                 case "Release":
                     if (current is ReleaseFuncSerializer releaseFuncSerializer)
                     {
@@ -788,6 +1027,13 @@ namespace DS4MapperTest
                     if (current is ChordedPressFuncSerializer chordedFuncSerializer)
                     {
                         serializer.Serialize(writer, chordedFuncSerializer);
+                    }
+
+                    break;
+                case "SimPress":
+                    if (current is SimPressFuncSerializer simPressFuncSerializer)
+                    {
+                        serializer.Serialize(writer, simPressFuncSerializer);
                     }
 
                     break;

@@ -1,26 +1,40 @@
-﻿using DS4MapperTest.MapperUtil;
-using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using DS4MapperTest.MapperUtil;
 
 namespace DS4MapperTest.ActionUtil
 {
+    // Fires its output once when the source input transitions from pressed to released
+    // (the digital falling edge). Arms on press, stays armed through the whole hold
+    // regardless of duration, and fires exactly once on release - never during the press,
+    // never repeatedly while held, never on startup/neutral input.
+    //
+    // Behavioural reference: JoyShockMapper's release-press + instant action modifiers
+    // (EventModifier::ReleasePress + ActionModifier::Instant, e.g. "!X/"), which press the
+    // output on release and release it again automatically a short time later
+    // (JoyShockMapper's MAGIC_INSTANT_DURATION, 40ms). See src/DigitalButton.cpp and
+    // src/Mapping.cpp in https://github.com/Electronicks/JoyShockMapper (MIT licence).
+    // No JSM source was copied; this is an independent C# implementation based on the
+    // observed behaviour, built on this app's own ActionFunc/Mapper architecture.
     public class ReleaseFunc : ActionFunc
     {
         public const int DELAY_DURATION_DEFAULT = 100;
+        public const int MAX_HOLD_TIME_DEFAULT = 250;
 
-        private bool status;
+        private bool armed;
+        private bool inToggleState;
 
         private int delayDurationMs = DELAY_DURATION_DEFAULT;
         public int DelayDurationMs { get => delayDurationMs; set => delayDurationMs = value; }
 
-        private int durationMs;
-        public int DurationMs { get => durationMs; set => durationMs = value; }
+        // Optional: if enabled, a hold longer than MaxHoldTimeMs suppresses the release
+        // firing entirely (release is still consumed/armed cleared, just nothing fires).
+        // Held for exactly or less than the configured value still fires normally.
+        private bool maxHoldTimeEnabled;
+        public bool MaxHoldTimeEnabled { get => maxHoldTimeEnabled; set => maxHoldTimeEnabled = value; }
 
-        private bool waited;
+        private int maxHoldTimeMs = MAX_HOLD_TIME_DEFAULT;
+        public int MaxHoldTimeMs { get => maxHoldTimeMs; set => maxHoldTimeMs = value; }
 
         private Stopwatch delayTimer = new Stopwatch();
 
@@ -32,102 +46,111 @@ namespace DS4MapperTest.ActionUtil
         public ReleaseFunc(ReleaseFunc srcFunc)
         {
             srcFunc.CopyTo(this);
-            onRelease = srcFunc.onRelease;
-            durationMs = srcFunc.durationMs;
+            onRelease = true;
             delayDurationMs = srcFunc.delayDurationMs;
+            toggleEnabled = srcFunc.toggleEnabled;
+            maxHoldTimeEnabled = srcFunc.maxHoldTimeEnabled;
+            maxHoldTimeMs = srcFunc.maxHoldTimeMs;
         }
 
         public override void Prepare(Mapper mapper, bool state, ActionFuncStateData stateData)
         {
-            if (this.status != state)
+            if (state)
             {
-                this.status = state;
-                waited = false;
-                activeEvent = true;
-
-                if (status)
+                // Held (or just pressed). Arm once; stay armed for the whole hold,
+                // regardless of duration. Never fires while held.
+                armed = true;
+                active = false;
+            }
+            else
+            {
+                // Source released. Fire exactly once if a genuine earlier press armed us;
+                // otherwise this is a neutral/startup report or an already-consumed cycle.
+                if (armed)
                 {
-                    if (delayEnd)
-                    {
-                        //ReleaseEvents(mapper);
-                    }
+                    armed = false;
 
-                    active = false;
-                    delayEnd = false;
-                    finished = false;
+                    // stateData.elapsed is restarted by ButtonAction on the press's rising
+                    // edge, so at release time it holds the full hold duration - no separate
+                    // timer needed here. "Longer than" the configured value suppresses the
+                    // fire; exactly at or under it still fires normally.
+                    bool heldTooLong = maxHoldTimeEnabled &&
+                        stateData.elapsed.ElapsedMilliseconds > maxHoldTimeMs;
+
+                    if (heldTooLong)
+                    {
+                        active = false;
+                    }
+                    else if (toggleEnabled)
+                    {
+                        ApplyToggleFiring();
+                    }
+                    else
+                    {
+                        active = true;
+                        outputActive = true;
+                        finished = false;
+                        delayTimer.Restart();
+                    }
                 }
                 else
                 {
-                    delayTimer.Reset();
-                }
-            }
-
-            if (!active)
-            {
-                if (status && !waited)
-                {
-                    if (stateData.elapsed.ElapsedMilliseconds >= durationMs)
-                    {
-                        waited = true;
-                        active = true;
-                        outputActive = true;
-                        activeEvent = true;
-                        delayEnd = true;
-                        delayTimer.Restart();
-                        // Execute system event
-                        //SendOutputEvent(mapper);
-                    }
+                    active = false;
                 }
             }
         }
 
+        private void ApplyToggleFiring()
+        {
+            inToggleState = !inToggleState;
+            active = true;
+            outputActive = inToggleState;
+            // A toggle firing is fully resolved the moment it is applied - it either
+            // presses (and stays pressed) or releases (a previous press). It never needs
+            // the delayed-release pulse used by the non-toggle case.
+            finished = true;
+        }
+
+        // Called by Mapper.ProcessReleaseEvents() on a later mapper tick than the one that
+        // fired the press, once per tick, until it reports finished. Never invoked for a
+        // toggle firing (those resolve immediately in Prepare and are never queued).
         public override void Event(Mapper mapper, ActionFuncStateData stateData)
         {
-            if (active && delayEnd)
+            if (active && !finished && delayTimer.ElapsedMilliseconds >= delayDurationMs)
             {
-                if (delayTimer.ElapsedMilliseconds >= delayDurationMs)
-                {
-                    //active = false;
-                    //activeEvent = false;
-                    //delayEnd = false;
-                    //finished = true;
-                    //delayTimer.Reset();
-
-                    // Execute Up Events
-                    ReleaseEvents(mapper);
-
-                    Release(mapper);
-                }
+                ReleaseEvents(mapper);
+                active = false;
+                outputActive = false;
+                finished = true;
             }
-        }
-
-        public override void Release(Mapper mapper)
-        {
-            status = false;
-            active = false;
-            outputActive = false;
-            activeEvent = false;
-            waited = false;
-            finished = false;
-            delayEnd = false;
-            delayTimer.Reset();
         }
 
         protected override void ReleaseEvents(Mapper mapper)
         {
-            OutputActionDataEnumerator activeActionsEnumerator =
-                new OutputActionDataEnumerator(outputActions);
-            activeActionsEnumerator.MoveToEnd();
-            while (activeActionsEnumerator.MovePrevious())
+            foreach (OutputActionData action in outputActions)
             {
-                OutputActionData action = activeActionsEnumerator.Current;
-                if (action.activatedEvent)
-                {
-                    mapper.RunEventFromButton(action, false);
-                }
+                mapper.RunEventFromButton(action, false);
             }
+        }
 
-            //mapper.RemoveReleaseFunc(this);
+        // Called when this action is being discarded (profile unload, layer/action-set
+        // change, controller disconnect, binding removal, mapper shutdown) rather than
+        // through a genuine source release. Must never fire the configured output; only
+        // clean up so nothing is left stuck down.
+        public override void Release(Mapper mapper)
+        {
+            bool wasPendingRelease = active && !finished;
+            armed = false;
+            inToggleState = false;
+            active = false;
+            outputActive = false;
+            finished = true;
+            delayTimer.Reset();
+
+            if (wasPendingRelease)
+            {
+                ReleaseEvents(mapper);
+            }
         }
 
         public override string Describe(Mapper mapper)
@@ -143,25 +166,17 @@ namespace DS4MapperTest.ActionUtil
             {
                 result = string.Join(", ", tempList);
             }
+            else
+            {
+                result = "Unbound";
+            }
 
             return result;
         }
 
         public override string DescribeOutputActions(Mapper mapper)
         {
-            string result = "";
-            List<string> tempList = new List<string>();
-            foreach (OutputActionData data in outputActions)
-            {
-                tempList.Add(data.Describe(mapper));
-            }
-
-            if (tempList.Count > 0)
-            {
-                result = $"{string.Join(", ", tempList)}";
-            }
-
-            return result;
+            return Describe(mapper);
         }
     }
 }

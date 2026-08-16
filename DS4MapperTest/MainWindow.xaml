@@ -4,116 +4,1414 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:hc="https://handyorg.github.io/handycontrol"
-        xmlns:local="clr-namespace:DS4MapperTest"
+        xmlns:views="clr-namespace:DS4MapperTest.Views"
+        xmlns:converters="clr-namespace:DS4MapperTest.Converters"
         mc:Ignorable="d"
-        Title="DS4MapperTest" Height="450" Width="800" Closed="Window_Closed">
+        Title="DS4MapperTest"
+        Height="720" Width="1100"
+        MinHeight="600" MinWidth="680"
+        Background="{DynamicResource JsmccBg0Brush}"
+        Closing="Window_Closing"
+        Closed="Window_Closed"
+        Loaded="Window_Loaded"
+        PreviewKeyDown="Window_PreviewKeyDown"
+        SizeChanged="Window_SizeChanged">
 
     <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <converters:InvertBoolToVisibilityConverter x:Key="InvertBoolToVis"/>
+
+        <Style x:Key="PlaceholderCardText" TargetType="TextBlock" BasedOn="{StaticResource JsmccMutedText}">
+            <Setter Property="FontStyle" Value="Italic"/>
+        </Style>
+
+        <Style x:Key="OverlayLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource JsmccTextStrongBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Width" Value="48"/>
+        </Style>
+
+        <Style x:Key="OtherSettingLabel" TargetType="TextBlock" BasedOn="{StaticResource JsmccLabelText}">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{DynamicResource JsmccTextStrongBrush}"/>
+        </Style>
+
+        <Style x:Key="LightbarPresetButtonStyle" TargetType="Button" BasedOn="{StaticResource JsmccButtonStyle}">
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,0,8,3"/>
+        </Style>
+
+        <Style x:Key="JsmccAccentButtonStyle" TargetType="Button" BasedOn="{StaticResource JsmccButtonStyle}">
+            <Setter Property="Background" Value="{DynamicResource JsmccBgPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource JsmccAccentBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="{StaticResource JsmccButtonRadius}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource JsmccBgInputBrush}"/>
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource JsmccAccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource JsmccAccentBrush}"/>
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource JsmccAccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SaveStatusPillBaseStyle" TargetType="Border">
+            <Setter Property="CornerRadius" Value="{StaticResource JsmccButtonRadius}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style x:Key="SaveStatusPillSuccessStyle" TargetType="Border" BasedOn="{StaticResource SaveStatusPillBaseStyle}">
+            <Setter Property="Background" Value="{DynamicResource JsmccSuccessBgBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource JsmccSuccessBorderBrush}"/>
+        </Style>
+
+        <Style x:Key="SaveStatusPillErrorStyle" TargetType="Border" BasedOn="{StaticResource SaveStatusPillBaseStyle}">
+            <Setter Property="Background" Value="{DynamicResource JsmccDangerBgBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource JsmccDangerBorderBrush}"/>
+        </Style>
+
+        <Style x:Key="SaveStatusPillWarningStyle" TargetType="Border" BasedOn="{StaticResource SaveStatusPillBaseStyle}">
+            <Setter Property="Background" Value="{DynamicResource JsmccWarningBgBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource JsmccWarningBorderBrush}"/>
+        </Style>
+
+        <Style x:Key="SaveStatusPillTextSuccessStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource JsmccSuccessTextBrush}"/>
+        </Style>
+
+        <Style x:Key="SaveStatusPillTextErrorStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource JsmccDangerTextBrush}"/>
+        </Style>
+
+        <Style x:Key="SaveStatusPillTextWarningStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource JsmccWarningTextBrush}"/>
+        </Style>
+
+        <DataTemplate x:Key="DeviceComboBoxItemTemplate">
+            <Grid MinWidth="200">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding DisplayName}"
+                           Foreground="{DynamicResource JsmccTextStrongBrush}"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center"
+                           Margin="0,0,10,0"/>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding Battery}"
+                           Style="{StaticResource JsmccMutedText}"
+                           VerticalAlignment="Center"/>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="MouseRoutingDestinationOptionTemplate">
+            <Grid MinWidth="210">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding DisplayName}"
+                           Foreground="{DynamicResource JsmccTextStrongBrush}"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center"
+                           Margin="0,0,10,0"/>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding AvailabilityText}"
+                           Style="{StaticResource JsmccMutedText}"
+                           VerticalAlignment="Center"/>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="MouseRoutingBulkOptionTemplate">
+            <Grid MinWidth="210">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding DisplayName}"
+                           Foreground="{DynamicResource JsmccTextStrongBrush}"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center"
+                           Margin="0,0,10,0"/>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding ScopeText}"
+                           Style="{StaticResource JsmccMutedText}"
+                           VerticalAlignment="Center"/>
+            </Grid>
+        </DataTemplate>
     </Window.Resources>
-    <DockPanel LastChildFill="True">
-        <DockPanel.Background>
-            <SolidColorBrush Color="{StaticResource RegionColor}"/>
-        </DockPanel.Background>
 
-        <TabControl DockPanel.Dock="Top" TabStripPlacement="Left">
-            <TabItem>
-                <TabItem.Header>
-                    <StackPanel Orientation="Horizontal">
-                        <Image Width="16" Source="/images/gamepad-solid.png" />
-                        <TextBlock Text="List" Margin="8,0,0,0" />
+    <Grid Background="{DynamicResource JsmccBg0Brush}">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="navColumn" Width="240"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border x:Name="navSidebarBorder"
+                    Grid.Column="0"
+                    Background="{DynamicResource JsmccBg1Brush}"
+                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                    BorderThickness="0,0,1,0"
+                    Padding="20,24">
+                <StackPanel x:Name="navStackPanel">
+                    <RadioButton x:Name="navGyroSensitivity"
+                                 GroupName="MainNav"
+                                 Content="Gyro &amp; Sensitivity"
+                                 Style="{StaticResource JsmccNavButtonStyle}"
+                                 IsChecked="True"
+                                 Checked="NavRadio_Checked"/>
+                    <RadioButton x:Name="navKeybinds"
+                                 GroupName="MainNav"
+                                 Content="Keybinds"
+                                 Style="{StaticResource JsmccNavButtonStyle}"
+                                 Checked="NavRadio_Checked"/>
+                    <RadioButton x:Name="navTrackpad"
+                                 GroupName="MainNav"
+                                 Content="Touchpad"
+                                 Style="{StaticResource JsmccNavButtonStyle}"
+                                 Checked="NavRadio_Checked"/>
+                    <RadioButton x:Name="navSticks"
+                                 GroupName="MainNav"
+                                 Content="Sticks"
+                                 Style="{StaticResource JsmccNavButtonStyle}"
+                                 Checked="NavRadio_Checked"/>
+                    <RadioButton x:Name="navOther"
+                                 GroupName="MainNav"
+                                 Content="Other"
+                                 Style="{StaticResource JsmccNavButtonStyle}"
+                                 Checked="NavRadio_Checked"/>
+                </StackPanel>
+            </Border>
+
+            <Popup x:Name="navPopup"
+                   PlacementTarget="{Binding ElementName=navHamburgerButton}"
+                   Placement="Bottom"
+                   StaysOpen="False"
+                   AllowsTransparency="True"
+                   PopupAnimation="Fade">
+                <Border x:Name="navPopupHost"
+                        Style="{StaticResource JsmccPanelBorder}"
+                        MinWidth="200"
+                        Margin="8"/>
+            </Popup>
+
+            <DockPanel Grid.Column="1"
+                       LastChildFill="True"
+                       Background="{DynamicResource JsmccBg0Brush}">
+                <Border DockPanel.Dock="Top"
+                        Background="{DynamicResource JsmccBg15Brush}"
+                        BorderBrush="{DynamicResource JsmccBorderBrush}"
+                        BorderThickness="0,0,0,1"
+                        Padding="28,13">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <WrapPanel Grid.Column="0"
+                                       Orientation="Horizontal"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,16,0">
+                                <Button x:Name="navHamburgerButton"
+                                        Content="&#9776;"
+                                        ToolTip="Menu"
+                                        Click="NavHamburgerButton_Click"
+                                        Style="{StaticResource JsmccOutputButtonStyle}"
+                                        Width="46"
+                                        Height="40"
+                                        Padding="0"
+                                        FontSize="20"
+                                        Visibility="Collapsed"
+                                        Margin="0,4,12,4"/>
+
+                                <StackPanel Orientation="Horizontal"
+                                            VerticalAlignment="Center"
+                                            Margin="0,4,12,4">
+                                    <TextBlock Text="Device"
+                                               Style="{StaticResource JsmccLabelText}"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,10,0"/>
+
+                                    <ComboBox x:Name="deviceComboBox"
+                                              Width="220"
+                                              ItemTemplate="{StaticResource DeviceComboBoxItemTemplate}"
+                                              Style="{StaticResource JsmccComboBoxStyle}"
+                                              SelectionChanged="DeviceComboBox_SelectionChanged"/>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal"
+                                            VerticalAlignment="Center"
+                                            Margin="0,4,12,4">
+                                    <TextBlock Text="Profile"
+                                               Style="{StaticResource JsmccLabelText}"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,10,0"/>
+
+                                    <ComboBox x:Name="profileComboBox"
+                                              Width="180"
+                                              Style="{StaticResource JsmccComboBoxStyle}"
+                                              SelectionChanged="ProfileComboBox_SelectionChanged">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Name}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Center"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </StackPanel>
+
+                                <Button Content="Manage"
+                                        Click="ManageProfilesBtn_Click"
+                                        Margin="0,4,12,4"
+                                        Style="{StaticResource JsmccButtonStyle}"/>
+
+                                <TextBlock x:Name="noDeviceHint"
+                                           Text="Connect a controller to begin"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource JsmccTextMutedBrush}"
+                                           FontSize="12"
+                                           FontStyle="Italic"
+                                           Margin="0,4,0,4"
+                                           Visibility="Collapsed"/>
+                            </WrapPanel>
+
+                            <views:ThemeToggleControl Grid.Column="1"
+                                                       VerticalAlignment="Center"/>
+                        </Grid>
+
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <WrapPanel Grid.Column="0"
+                                       Orientation="Horizontal"
+                                       VerticalAlignment="Center">
+                                <TextBlock x:Name="serviceStatusText"
+                                           Text="Stopped"
+                                           Style="{StaticResource JsmccMutedText}"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"
+                                           Margin="0,4,12,4"/>
+
+                                <Button x:Name="serviceToggleButton"
+                                        Content="Start"
+                                        Click="ServiceToggleButton_Click"
+                                        Margin="0,4,12,4"
+                                        MinWidth="64"
+                                        Style="{StaticResource JsmccButtonStyle}"/>
+
+                                <Button x:Name="gyroCalibrateButton"
+                                        Content="Recalibrate Gyro"
+                                        Click="GyroCalibrateButton_Click"
+                                        Margin="0,4,12,4"
+                                        Style="{StaticResource JsmccButtonStyle}"/>
+
+                                <TextBlock x:Name="gyroCalibrationStatusText"
+                                           Visibility="Collapsed"
+                                           Margin="0,4,0,4"
+                                           Style="{StaticResource JsmccMutedText}"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"/>
+
+                                <Button x:Name="mouseRoutingButton"
+                                        Content="Mouse Routing"
+                                        Click="MouseRoutingButton_Click"
+                                        Margin="12,4,0,4"
+                                        ToolTip="Configure global controller mouse-output routing"
+                                        Style="{StaticResource JsmccButtonStyle}"/>
+
+                                <Popup x:Name="mouseRoutingPopup"
+                                       PlacementTarget="{Binding ElementName=mouseRoutingButton}"
+                                       Placement="Bottom"
+                                       StaysOpen="False"
+                                       AllowsTransparency="True"
+                                       PopupAnimation="Fade"
+                                       Closed="MouseRoutingPopup_Closed">
+                                    <Border x:Name="mouseRoutingPopupHost"
+                                            Style="{StaticResource JsmccPanelBorder}"
+                                            Width="600"
+                                            MaxHeight="560"
+                                            Margin="0,8,0,0">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <StackPanel x:Name="mouseRoutingPanelRoot"
+                                                        Margin="18">
+                                                <Grid Margin="0,0,0,14">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="Mouse Routing"
+                                                                   Style="{StaticResource JsmccSectionTitle}"/>
+                                                        <TextBlock Text="Configure global output routes for controller mouse producers. Changes are staged until you apply them."
+                                                                   Style="{StaticResource JsmccMutedText}"
+                                                                   TextWrapping="Wrap"
+                                                                   Margin="0,4,12,0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1"
+                                                                Orientation="Horizontal"
+                                                                HorizontalAlignment="Right"
+                                                                VerticalAlignment="Top">
+                                                        <Button Content="Discard"
+                                                                Click="DiscardMouseRoutingButton_Click"
+                                                                Style="{StaticResource JsmccDangerButtonStyle}"
+                                                                IsEnabled="{Binding HasStagedChanges}"/>
+                                                        <Button Content="Apply"
+                                                                Click="ApplyMouseRoutingButton_Click"
+                                                                Style="{StaticResource JsmccAccentButtonStyle}"
+                                                                IsEnabled="{Binding HasStagedChanges}"
+                                                                Margin="8,0,0,0"/>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <Border Style="{StaticResource JsmccCardBorder}"
+                                                        Padding="14"
+                                                        Margin="0,0,0,14">
+                                                    <StackPanel>
+                                                        <TextBlock Text="Quick set"
+                                                                   Style="{StaticResource JsmccCardTitle}"/>
+                                                        <TextBlock Text="Pick one destination and stage it across every compatible route in one action."
+                                                                   Style="{StaticResource JsmccMutedText}"
+                                                                   TextWrapping="Wrap"
+                                                                   Margin="0,4,0,0"/>
+
+                                                        <Grid Margin="0,12,0,0">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="Destination"
+                                                                       Style="{StaticResource OtherSettingLabel}"
+                                                                       VerticalAlignment="Center"
+                                                                       Margin="0,0,12,0"/>
+                                                            <ComboBox Grid.Column="1"
+                                                                      MinWidth="260"
+                                                                      HorizontalAlignment="Stretch"
+                                                                      Style="{StaticResource JsmccComboBoxStyle}"
+                                                                      ItemsSource="{Binding BulkApplyOptions}"
+                                                                      ItemTemplate="{StaticResource MouseRoutingBulkOptionTemplate}"
+                                                                      SelectedItem="{Binding SelectedBulkApplyOption, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                        </Grid>
+
+                                                        <TextBlock Text="{Binding BulkApplyHelperText}"
+                                                                   Style="{StaticResource JsmccMutedText}"
+                                                                   TextWrapping="Wrap"
+                                                                   Margin="0,8,0,0"/>
+
+                                                        <Button Content="Apply to all"
+                                                                Click="ApplyMouseRoutingQuickSetButton_Click"
+                                                                Style="{StaticResource JsmccButtonStyle}"
+                                                                IsEnabled="{Binding HasSelectedBulkApplyOption}"
+                                                                HorizontalAlignment="Right"
+                                                                Margin="0,12,0,0"/>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <ItemsControl ItemsSource="{Binding RouteRows}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="0,0,0,1"
+                                                                    Padding="0,0,0,12"
+                                                                    Margin="0,0,0,12">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="146"/>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                    </Grid.ColumnDefinitions>
+
+                                                                    <TextBlock Text="{Binding RouteLabel}"
+                                                                               Style="{StaticResource OtherSettingLabel}"
+                                                                               TextWrapping="Wrap"
+                                                                               Margin="0,6,14,0"/>
+
+                                                                    <StackPanel Grid.Column="1">
+                                                                        <ComboBox Width="250"
+                                                                                  HorizontalAlignment="Left"
+                                                                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                                                                  ItemsSource="{Binding DestinationOptions}"
+                                                                                  ItemTemplate="{StaticResource MouseRoutingDestinationOptionTemplate}"
+                                                                                  SelectedValuePath="Destination"
+                                                                                  SelectedValue="{Binding StagedDestination, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                                        <TextBlock Text="{Binding ConfiguredDestinationText, StringFormat=Configured: {0}}"
+                                                                                   Style="{StaticResource JsmccBodyText}"
+                                                                                   Margin="0,8,0,0"/>
+                                                                        <TextBlock Text="{Binding ActiveDestinationText, StringFormat=Active: {0}}"
+                                                                                   Style="{StaticResource JsmccBodyText}"
+                                                                                   Margin="0,2,0,0"/>
+                                                                        <TextBlock Text="{Binding StatusText}"
+                                                                                   Style="{StaticResource JsmccMutedText}"
+                                                                                   TextWrapping="Wrap"
+                                                                                   Margin="0,4,0,0"/>
+                                                                        <TextBlock Text="Also covers all mouse input not explicitly listed as its own routing option - Mouse Button Binds, Mouse Wheel Binds, etc."
+                                                                                   Style="{StaticResource JsmccMutedText}"
+                                                                                   TextWrapping="Wrap"
+                                                                                   Margin="0,4,0,0"
+                                                                                   Visibility="{Binding IsGyroRoute, Converter={StaticResource BoolToVis}}"/>
+                                                                        <TextBlock Text="Absolute Mouse is limited to FakerInput and SendInput. VIIPER destinations are available only for relative routes."
+                                                                                   Style="{StaticResource JsmccMutedText}"
+                                                                                   TextWrapping="Wrap"
+                                                                                   Margin="0,4,0,0"
+                                                                                   Visibility="{Binding IsAbsoluteMouseRoute, Converter={StaticResource BoolToVis}}"/>
+                                                                        <TextBlock Text="Only Flick Turn Binds route through here."
+                                                                                   Style="{StaticResource JsmccMutedText}"
+                                                                                   TextWrapping="Wrap"
+                                                                                   Margin="0,4,0,0"
+                                                                                   Visibility="{Binding IsOtherRoute, Converter={StaticResource BoolToVis}}"/>
+                                                                    </StackPanel>
+                                                                </Grid>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <Border Style="{StaticResource JsmccCardBorder}"
+                                                        Padding="14"
+                                                        Margin="0,0,0,14">
+                                                    <StackPanel>
+                                                        <TextBlock Text="Physical Mouse Forwarding (EXPERIMENTAL)"
+                                                                   Style="{StaticResource JsmccCardTitle}"/>
+                                                        <TextBlock Text="Capture a selected physical mouse and forward it through the 'Physical Mouse Forwarding' destination above. The physical mouse still sends its normal Windows input at the same time - 'Physical Mouse Hiding' is not supported."
+                                                                   Style="{StaticResource JsmccMutedText}"
+                                                                   TextWrapping="Wrap"
+                                                                   Margin="0,4,0,10"/>
+
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <ComboBox x:Name="physicalMouseComboBox"
+                                                                      Grid.Column="0"
+                                                                      Style="{StaticResource JsmccComboBoxStyle}"
+                                                                      DisplayMemberPath="DisplayName"
+                                                                      SelectedValuePath="StableId"
+                                                                      SelectionChanged="PhysicalMouseComboBox_SelectionChanged"
+                                                                      ToolTip="{Binding SelectedValue, ElementName=physicalMouseComboBox}"/>
+                                                            <Button Grid.Column="1"
+                                                                    Content="Refresh"
+                                                                    Click="RefreshPhysicalMiceButton_Click"
+                                                                    Style="{StaticResource JsmccButtonStyle}"
+                                                                    Margin="8,0,0,0"/>
+                                                        </Grid>
+                                                        <TextBlock Text="Choose the physical mouse to forward. Virtual output devices are not listed."
+                                                                   Style="{StaticResource JsmccMutedText}"
+                                                                   TextWrapping="Wrap"
+                                                                   Margin="0,4,0,0"/>
+
+                                                        <CheckBox x:Name="physicalMouseEnabledCheckBox"
+                                                                  Content="Enable Physical Mouse Forwarding"
+                                                                  Style="{StaticResource JsmccToggleStyle}"
+                                                                  Margin="0,10,0,0"
+                                                                  Checked="PhysicalMouseEnabledCheckBox_Changed"
+                                                                  Unchecked="PhysicalMouseEnabledCheckBox_Changed"/>
+
+                                                        <TextBlock x:Name="physicalMouseStatusText"
+                                                                   Style="{StaticResource JsmccMutedText}"
+                                                                   TextWrapping="Wrap"
+                                                                   Margin="0,10,0,0"/>
+                                                        <TextBlock x:Name="physicalMouseValidationText"
+                                                                   Foreground="{DynamicResource JsmccDangerTextBrush}"
+                                                                   TextWrapping="Wrap"
+                                                                   Margin="0,4,0,0"/>
+
+                                                        <StackPanel Orientation="Horizontal"
+                                                                    HorizontalAlignment="Right"
+                                                                    Margin="0,10,0,0">
+                                                            <Button x:Name="discardPhysicalMouseSettingsButton"
+                                                                    Content="Discard"
+                                                                    Click="DiscardPhysicalMouseSettingsButton_Click"
+                                                                    Style="{StaticResource JsmccDangerButtonStyle}"
+                                                                    IsEnabled="False"/>
+                                                            <Button Content="Reset to default"
+                                                                    Click="ResetPhysicalMouseSettingsButton_Click"
+                                                                    Style="{StaticResource JsmccButtonStyle}"
+                                                                    Margin="8,0,0,0"/>
+                                                            <Button x:Name="applyPhysicalMouseSettingsButton"
+                                                                    Content="Apply"
+                                                                    Click="ApplyPhysicalMouseSettingsButton_Click"
+                                                                    Style="{StaticResource JsmccAccentButtonStyle}"
+                                                                    Margin="8,0,0,0"
+                                                                    IsEnabled="False"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <TextBlock Text="{Binding ValidationMessage}"
+                                                           Foreground="{DynamicResource JsmccDangerTextBrush}"
+                                                           TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Border>
+                                </Popup>
+                            </WrapPanel>
+
+                            <WrapPanel Grid.Column="1"
+                                       Orientation="Horizontal"
+                                       HorizontalAlignment="Right"
+                                       VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border x:Name="unsavedStatusPill"
+                                            Visibility="{Binding IsProfileDirty, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}"
+                                            Margin="0,4,12,4"
+                                            Style="{StaticResource SaveStatusPillWarningStyle}">
+                                        <TextBlock Text="Unsaved changes"
+                                                   Style="{StaticResource SaveStatusPillTextWarningStyle}"/>
+                                    </Border>
+
+                                    <Border x:Name="saveStatusPill"
+                                            Visibility="Collapsed"
+                                            Margin="0,4,12,4"
+                                            Style="{StaticResource SaveStatusPillSuccessStyle}">
+                                        <TextBlock x:Name="saveStatusPillText"
+                                                   Text="Saved &#x2713;"
+                                                   Style="{StaticResource SaveStatusPillTextSuccessStyle}"/>
+                                    </Border>
+
+                                    <Button x:Name="discardProfileChangesButton"
+                                            Content="Discard Changes"
+                                            Click="DiscardProfileChangesButton_Click"
+                                            IsEnabled="{Binding IsProfileDirty, TargetNullValue=False, FallbackValue=False}"
+                                            Margin="0,4,12,4"
+                                            Style="{StaticResource JsmccDangerButtonStyle}"/>
+
+                                    <Button x:Name="saveProfileButton"
+                                            Content="Save Profile"
+                                            Click="SaveProfileButton_Click"
+                                            Margin="0,4,0,4"
+                                            Style="{StaticResource JsmccAccentButtonStyle}"/>
+                                </StackPanel>
+                            </WrapPanel>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <Border x:Name="actionContextRow"
+                        DockPanel.Dock="Top"
+                        Background="{DynamicResource JsmccBg1Brush}"
+                        BorderBrush="{DynamicResource JsmccBorderBrush}"
+                        BorderThickness="0,0,0,1"
+                        Padding="28,8"
+                        IsEnabled="False">
+                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel x:Name="actionSetGroup" Orientation="Horizontal" Margin="0,0,28,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
+                                <TextBlock Text="Action Set"
+                                           Style="{StaticResource JsmccLabelText}"
+                                           Width="66"
+                                           Margin="0,0,8,0"/>
+
+                                <ComboBox x:Name="actionSetComboBox"
+                                          Width="140"
+                                          DisplayMemberPath="DisplayName"
+                                          Style="{StaticResource JsmccComboBoxStyle}"
+                                          SelectionChanged="ActionSetComboBox_SelectionChanged"/>
+                            </StackPanel>
+
+                            <Button x:Name="addSetButton"
+                                    Content="+"
+                                    ToolTip="Add Action Set"
+                                    Click="AddSetBtn_Click"
+                                    Style="{StaticResource JsmccOutputButtonStyle}"
+                                    MinWidth="30"
+                                    Margin="6,4,0,4"/>
+                            <Button x:Name="renameSetButton"
+                                    Content="Rename"
+                                    ToolTip="Rename Action Set"
+                                    Click="RenameSetBtn_Click"
+                                    Style="{StaticResource JsmccOutputButtonStyle}"
+                                    Margin="6,4,0,4"/>
+                            <Button x:Name="removeSetButton"
+                                    Content="Remove"
+                                    ToolTip="Remove Action Set"
+                                    Click="RemoveSetBtn_Click"
+                                    Style="{StaticResource JsmccDangerButtonStyle}"
+                                    Padding="10,6"
+                                    MinHeight="30"
+                                    FontSize="12"
+                                    Margin="6,4,0,4"/>
+
+                            <TextBox x:Name="renameSetTextBox"
+                                     Width="140"
+                                     Visibility="Collapsed"
+                                     Style="{StaticResource JsmccTextBoxStyle}"
+                                     KeyDown="RenameSetTextBox_KeyDown"
+                                     Margin="0,4,0,4"/>
+                            <Button x:Name="confirmRenameSetButton"
+                                    Content="&#x2713;"
+                                    ToolTip="Save name"
+                                    Visibility="Collapsed"
+                                    Click="ConfirmRenameSetBtn_Click"
+                                    Style="{StaticResource JsmccOutputButtonStyle}"
+                                    MinWidth="30"
+                                    Margin="6,4,0,4"/>
+                            <Button x:Name="cancelRenameSetButton"
+                                    Content="&#x2715;"
+                                    ToolTip="Cancel"
+                                    Visibility="Collapsed"
+                                    Click="CancelRenameSetBtn_Click"
+                                    Style="{StaticResource JsmccOutputButtonStyle}"
+                                    MinWidth="30"
+                                    Margin="4,4,0,4"/>
+                        </StackPanel>
+
+                        <StackPanel x:Name="actionLayerGroup" Orientation="Horizontal" Margin="0,0,0,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
+                                <TextBlock Text="Layer"
+                                           Style="{StaticResource JsmccLabelText}"
+                                           Width="66"
+                                           Margin="0,0,8,0"/>
+
+                                <ComboBox x:Name="actionLayerComboBox"
+                                          Width="140"
+                                          DisplayMemberPath="DisplayName"
+                                          Style="{StaticResource JsmccComboBoxStyle}"
+                                          SelectionChanged="ActionLayerComboBox_SelectionChanged"/>
+                            </StackPanel>
+
+                            <Button x:Name="addLayerButton"
+                                    Content="+"
+                                    ToolTip="Add Action Layer"
+                                    Click="AddLayerBtn_Click"
+                                    Style="{StaticResource JsmccOutputButtonStyle}"
+                                    MinWidth="30"
+                                    Margin="6,4,0,4"/>
+                            <Button x:Name="renameLayerButton"
+                                    Content="Rename"
+                                    ToolTip="Rename Action Layer"
+                                    Click="RenameLayerBtn_Click"
+                                    Style="{StaticResource JsmccOutputButtonStyle}"
+                                    Margin="6,4,0,4"/>
+                            <Button x:Name="removeLayerButton"
+                                    Content="Remove"
+                                    ToolTip="Remove Action Layer"
+                                    Click="RemoveLayerBtn_Click"
+                                    Style="{StaticResource JsmccDangerButtonStyle}"
+                                    Padding="10,6"
+                                    MinHeight="30"
+                                    FontSize="12"
+                                    Margin="6,4,0,4"/>
+
+                            <TextBox x:Name="renameLayerTextBox"
+                                     Width="140"
+                                     Visibility="Collapsed"
+                                     Style="{StaticResource JsmccTextBoxStyle}"
+                                     KeyDown="RenameLayerTextBox_KeyDown"
+                                     Margin="0,4,0,4"/>
+                            <Button x:Name="confirmRenameLayerButton"
+                                    Content="&#x2713;"
+                                    ToolTip="Save name"
+                                    Visibility="Collapsed"
+                                    Click="ConfirmRenameLayerBtn_Click"
+                                    Style="{StaticResource JsmccOutputButtonStyle}"
+                                    MinWidth="30"
+                                    Margin="6,4,0,4"/>
+                            <Button x:Name="cancelRenameLayerButton"
+                                    Content="&#x2715;"
+                                    ToolTip="Cancel"
+                                    Visibility="Collapsed"
+                                    Click="CancelRenameLayerBtn_Click"
+                                    Style="{StaticResource JsmccOutputButtonStyle}"
+                                    MinWidth="30"
+                                    Margin="4,4,0,4"/>
+                        </StackPanel>
+                    </WrapPanel>
+                </Border>
+
+                <ScrollViewer x:Name="mainContentScrollViewer"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <Grid Margin="{StaticResource JsmccShellPadding}">
+                        <Border Visibility="{Binding IsChecked, ElementName=navGyroSensitivity, Converter={StaticResource BoolToVis}}"
+                                Style="{StaticResource JsmccPanelBorder}">
+                            <StackPanel>
+                                <TextBlock Text="Gyro &amp; Sensitivity" Style="{StaticResource JsmccPageTitle}"/>
+                                <TextBlock Text="Configure gyro behaviour, sensitivity, and curve settings."
+                                           Style="{StaticResource JsmccBodyText}"
+                                           Margin="0,0,0,12"/>
+
+                                <TabControl Style="{StaticResource JsmccPillTabControlStyle}">
+                                    <TabItem Header="Gyro Behaviour">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                      HorizontalScrollBarVisibility="Disabled"
+                                                      CanContentScroll="False">
+                                            <StackPanel>
+                                                <views:GyroActionsPanel ShowActionSettings="False"
+                                                                        PanelTitle="Gyro Action"
+                                                                        PanelDescription="Choose what the gyro outputs. Output direction, invert, sensitivity, and noise steadying are tuned below and in the neighbouring tabs."/>
+                                                <views:GyroOutputControl Margin="0,10,0,0"/>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </TabItem>
+                                    <TabItem Header="Gyro Activation">
+                                        <views:GyroActionsPanel ShowActionSelect="False"
+                                                                ShowNameSettings="False"
+                                                                ShowPanelHeader="False"
+                                                                ShowBindingHeader="False"/>
+                                    </TabItem>
+                                    <TabItem Header="Sensitivity">
+                                        <views:GyroSensitivityControl/>
+                                    </TabItem>
+                                    <TabItem Header="Noise &amp; Steadying">
+                                        <views:GyroNoiseSteadyingControl/>
+                                    </TabItem>
+                                    <TabItem Header="Invert Gyro Activation">
+                                        <views:GyroInvertControl/>
+                                    </TabItem>
+                                    <TabItem Header="Extra">
+                                        <views:GyroActionsPanel ShowActionSelect="False"
+                                                                ShowActivationSettings="False"
+                                                                ShowPanelHeader="False"
+                                                                ShowBindingHeader="False"/>
+                                    </TabItem>
+                                </TabControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Visibility="{Binding IsChecked, ElementName=navKeybinds, Converter={StaticResource BoolToVis}}"
+                                Style="{StaticResource JsmccPanelBorder}">
+                            <StackPanel>
+                                <TextBlock Text="Keybinds" Style="{StaticResource JsmccPageTitle}"/>
+                                <TextBlock Text="Map controller buttons to keyboard, mouse, and gamepad outputs."
+                                           Style="{StaticResource JsmccBodyText}"
+                                           Margin="0,0,0,12"/>
+
+                                <TabControl Style="{StaticResource JsmccPillTabControlStyle}">
+                                    <TabItem Header="Face">
+                                        <views:FaceKeybindsControl/>
+                                    </TabItem>
+                                    <TabItem Header="D-Pad">
+                                        <views:DPadKeybindsControl/>
+                                    </TabItem>
+                                    <TabItem Header="Bumpers">
+                                        <views:BumpersKeybindsControl/>
+                                    </TabItem>
+                                    <TabItem Header="Triggers">
+                                        <views:TriggersKeybindsControl/>
+                                    </TabItem>
+                                    <TabItem Header="Center">
+                                        <views:CenterKeybindsControl/>
+                                    </TabItem>
+                                    <TabItem Header="Paddles">
+                                        <views:PaddlesKeybindsControl/>
+                                    </TabItem>
+                                    <TabItem Header="Extra">
+                                        <views:ExtraKeybindsControl/>
+                                    </TabItem>
+                                </TabControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Visibility="{Binding IsChecked, ElementName=navTrackpad, Converter={StaticResource BoolToVis}}"
+                                Style="{StaticResource JsmccPanelBorder}">
+                            <StackPanel>
+                                <TextBlock Text="Touchpad" Style="{StaticResource JsmccPageTitle}"/>
+                                <TextBlock Text="Configure touchpad bindings, movement, zones, gestures, trackball, and scroll options."
+                                           Style="{StaticResource JsmccBodyText}"
+                                           Margin="0,0,0,12"/>
+
+                                <views:TouchpadControl/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Visibility="{Binding IsChecked, ElementName=navSticks, Converter={StaticResource BoolToVis}}"
+                                Style="{StaticResource JsmccPanelBorder}">
+                            <StackPanel>
+                                <TextBlock Text="Sticks" Style="{StaticResource JsmccPageTitle}"/>
+                                <TextBlock Text="Configure stick bindings, modes, and analog behaviour."
+                                           Style="{StaticResource JsmccBodyText}"
+                                           Margin="0,0,0,12"/>
+
+                                <TabControl Style="{StaticResource JsmccPillTabControlStyle}">
+                                    <TabItem Header="Touch Bindings">
+                                        <views:SticksTouchBindingsControl/>
+                                    </TabItem>
+                                    <TabItem Header="Click Bindings">
+                                        <views:SticksBindingsControl/>
+                                    </TabItem>
+                                    <TabItem Header="Left Stick Settings">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                      HorizontalScrollBarVisibility="Disabled"
+                                                      CanContentScroll="False">
+                                            <StackPanel DataContext="{Binding LeftStickKeybinds}" Margin="0,0,10,12">
+                                                <Border Style="{StaticResource JsmccCardBorder}"
+                                                        Visibility="{Binding HasBinding, Converter={StaticResource InvertBoolToVis}}">
+                                                    <TextBlock Text="No left stick binding available for this controller."
+                                                               Style="{StaticResource JsmccBodyText}"
+                                                               TextWrapping="Wrap"/>
+                                                </Border>
+                                                <views:StickSideModeSettingsControl Visibility="{Binding HasBinding, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </TabItem>
+                                    <TabItem Header="Right Stick Settings">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                      HorizontalScrollBarVisibility="Disabled"
+                                                      CanContentScroll="False">
+                                            <StackPanel DataContext="{Binding RightStickKeybinds}" Margin="0,0,10,12">
+                                                <Border Style="{StaticResource JsmccCardBorder}"
+                                                        Visibility="{Binding HasBinding, Converter={StaticResource InvertBoolToVis}}">
+                                                    <TextBlock Text="No right stick binding available for this controller."
+                                                               Style="{StaticResource JsmccBodyText}"
+                                                               TextWrapping="Wrap"/>
+                                                </Border>
+                                                <views:StickSideModeSettingsControl Visibility="{Binding HasBinding, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </TabItem>
+                                </TabControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Visibility="{Binding IsChecked, ElementName=navOther, Converter={StaticResource BoolToVis}}"
+                                Style="{StaticResource JsmccPanelBorder}">
+                            <StackPanel>
+                                <TextBlock Text="Other" Style="{StaticResource JsmccPageTitle}"/>
+                                <TextBlock Text="Configure output controller, vibration, and lightbar options."
+                                           Style="{StaticResource JsmccBodyText}"
+                                           Margin="0,0,0,12"/>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <StackPanel>
+                                <Border Style="{StaticResource JsmccCardBorder}">
+                                    <StackPanel>
+                                        <TextBlock Text="Output Controller" Style="{StaticResource JsmccSectionTitle}"/>
+
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Output Controller" Style="{StaticResource OtherSettingLabel}"/>
+                                                <TextBlock Text="Enables controller output using the selected virtual controller type."
+                                                           Style="{StaticResource JsmccMutedText}"
+                                                           Margin="0,3,16,0"/>
+                                            </StackPanel>
+                                            <CheckBox Grid.Column="1"
+                                                      Style="{StaticResource JsmccToggleStyle}"
+                                                      IsChecked="{Binding OutControllerEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      VerticalAlignment="Center"/>
+                                        </Grid>
+
+                                        <Grid Margin="0,12,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="220"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Controller Type" Style="{StaticResource OtherSettingLabel}"/>
+                                                <TextBlock Text="Selects the virtual controller type used for output."
+                                                           Style="{StaticResource JsmccMutedText}"
+                                                           Margin="0,3,16,0"/>
+                                            </StackPanel>
+                                            <ComboBox Grid.Column="1"
+                                                      ItemsSource="{Binding OutputControllerTypeOptions}"
+                                                      DisplayMemberPath="DisplayName"
+                                                      SelectedValuePath="ChoiceValue"
+                                                      SelectedValue="{Binding CurrentOutputControllerType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      Style="{StaticResource JsmccComboBoxStyle}"
+                                                      VerticalAlignment="Center"/>
+                                        </Grid>
+
+                                        <StackPanel Orientation="Horizontal"
+                                                    HorizontalAlignment="Right"
+                                                    Margin="0,12,0,0">
+                                            <Button x:Name="applyOutputControllerButton"
+                                                    Content="Apply"
+                                                    Click="ApplyOutputControllerButton_Click"
+                                                    Style="{StaticResource JsmccButtonStyle}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource JsmccCardBorder}"
+                                        Visibility="{Binding HasPhysicalControllerVisibility, Converter={StaticResource BoolToVis}}"
+                                        IsEnabled="{Binding PhysicalControllerVisibility.IsAvailable}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Hide Physical Controller" Style="{StaticResource JsmccSectionTitle}"/>
+                                            <TextBlock Text="{Binding PhysicalControllerVisibility.Description}"
+                                                       Style="{StaticResource JsmccMutedText}"
+                                                       Margin="0,6,16,0"
+                                                       TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                        <CheckBox Grid.Column="1"
+                                                  Style="{StaticResource JsmccToggleStyle}"
+                                                  IsChecked="{Binding PhysicalControllerVisibility.Enabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+
+                                <Border Style="{StaticResource JsmccCardBorder}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Vibration/Haptic Feedback" Style="{StaticResource JsmccSectionTitle}"/>
+                                            <TextBlock Text="Enables vibration or haptic feedback where supported."
+                                                       Style="{StaticResource JsmccMutedText}"
+                                                       Margin="0,6,16,0"/>
+                                        </StackPanel>
+                                        <CheckBox Grid.Column="1"
+                                                  Style="{StaticResource JsmccToggleStyle}"
+                                                  IsChecked="{Binding ForceFeedbackEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+
+                                <Border Style="{StaticResource JsmccCardBorder}"
+                                        Visibility="{Binding SupportsLightbar, Converter={StaticResource BoolToVis}}">
+                                    <StackPanel>
+                                        <TextBlock Text="Lightbar" Style="{StaticResource JsmccSectionTitle}"/>
+
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="220"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Lightbar Mode" Style="{StaticResource OtherSettingLabel}"/>
+                                                <TextBlock Text="Chooses the existing lightbar behaviour for supported controllers."
+                                                           Style="{StaticResource JsmccMutedText}"
+                                                           Margin="0,3,16,0"/>
+                                            </StackPanel>
+                                            <ComboBox Grid.Column="1"
+                                                      ItemsSource="{Binding LightbarModeOptions}"
+                                                      DisplayMemberPath="DisplayName"
+                                                      SelectedValuePath="ChoiceValue"
+                                                      SelectedValue="{Binding CurrentLightbarMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      Style="{StaticResource JsmccComboBoxStyle}"
+                                                      VerticalAlignment="Center"/>
+                                        </Grid>
+
+                                        <Grid Margin="0,12,0,0"
+                                              Visibility="{Binding IsSolidLightbarMode, Converter={StaticResource BoolToVis}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Lightbar Colour" Style="{StaticResource OtherSettingLabel}"/>
+                                                <TextBlock Text="Sets the solid lightbar colour stored in the profile."
+                                                           Style="{StaticResource JsmccMutedText}"
+                                                           Margin="0,3,16,0"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1"
+                                                        Orientation="Horizontal"
+                                                        VerticalAlignment="Center">
+                                                <Border Width="34"
+                                                        Height="28"
+                                                        Background="{Binding LightbarPreviewBrush}"
+                                                        BorderBrush="{DynamicResource JsmccBorderStrongBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="{StaticResource JsmccControlRadius}"
+                                                        Margin="0,0,8,0"/>
+                                                <TextBox Width="92"
+                                                         Text="{Binding LightbarHexColor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                         CharacterCasing="Upper"
+                                                         MaxLength="7"
+                                                         Style="{StaticResource JsmccTextBoxStyle}"/>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <ItemsControl ItemsSource="{Binding LightbarPresetColors}"
+                                                      Margin="0,10,0,0"
+                                                      Visibility="{Binding IsSolidLightbarMode, Converter={StaticResource BoolToVis}}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid Columns="9" Rows="2"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Tag="{Binding HexColor}"
+                                                            ToolTip="{Binding HexColor}"
+                                                            Background="{Binding Brush}"
+                                                            BorderBrush="{DynamicResource JsmccBorderStrongBrush}"
+                                                            Click="LightbarPreset_Click"
+                                                            Style="{StaticResource LightbarPresetButtonStyle}"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <Grid Margin="0,12,0,0"
+                                              Visibility="{Binding IsRainbowLightbarMode, Converter={StaticResource BoolToVis}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Cycle Time" Style="{StaticResource OtherSettingLabel}"/>
+                                                <TextBlock Text="Time in seconds for one full rainbow cycle."
+                                                           Style="{StaticResource JsmccMutedText}"
+                                                           Margin="0,3,16,0"/>
+                                            </StackPanel>
+                                            <TextBox Grid.Column="1"
+                                                     Width="92"
+                                                     Text="{Binding RainbowSecondsCycle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                     Style="{StaticResource JsmccTextBoxStyle}"
+                                                     VerticalAlignment="Center"/>
+                                        </Grid>
+
+                                        <Grid Margin="0,12,0,0"
+                                              Visibility="{Binding IsPulseLightbarMode, Converter={StaticResource BoolToVis}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Pulse Colour" Style="{StaticResource OtherSettingLabel}"/>
+                                                <TextBlock Text="Colour used by the pulse lightbar effect."
+                                                           Style="{StaticResource JsmccMutedText}"
+                                                           Margin="0,3,16,0"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1"
+                                                        Orientation="Horizontal"
+                                                        VerticalAlignment="Center">
+                                                <Border Width="34"
+                                                        Height="28"
+                                                        Background="{Binding LightbarPulsePreviewBrush}"
+                                                        BorderBrush="{DynamicResource JsmccBorderStrongBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="{StaticResource JsmccControlRadius}"
+                                                        Margin="0,0,8,0"/>
+                                                <TextBox Width="92"
+                                                         Text="{Binding LightbarPulseHexColor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                         CharacterCasing="Upper"
+                                                         MaxLength="7"
+                                                         Style="{StaticResource JsmccTextBoxStyle}"/>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <ItemsControl ItemsSource="{Binding LightbarPresetColors}"
+                                                      Margin="0,10,0,0"
+                                                      Visibility="{Binding IsPulseLightbarMode, Converter={StaticResource BoolToVis}}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid Columns="9" Rows="2"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Tag="{Binding HexColor}"
+                                                            ToolTip="{Binding HexColor}"
+                                                            Background="{Binding Brush}"
+                                                            BorderBrush="{DynamicResource JsmccBorderStrongBrush}"
+                                                            Click="LightbarPulsePreset_Click"
+                                                            Style="{StaticResource LightbarPresetButtonStyle}"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <Grid Margin="0,12,0,0"
+                                              Visibility="{Binding IsBatteryLightbarMode, Converter={StaticResource BoolToVis}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Battery Colour" Style="{StaticResource OtherSettingLabel}"/>
+                                                <TextBlock Text="Colour used by the battery lightbar mode where supported."
+                                                           Style="{StaticResource JsmccMutedText}"
+                                                           Margin="0,3,16,0"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1"
+                                                        Orientation="Horizontal"
+                                                        VerticalAlignment="Center">
+                                                <Border Width="34"
+                                                        Height="28"
+                                                        Background="{Binding LightbarBatteryPreviewBrush}"
+                                                        BorderBrush="{DynamicResource JsmccBorderStrongBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="{StaticResource JsmccControlRadius}"
+                                                        Margin="0,0,8,0"/>
+                                                <TextBox Width="92"
+                                                         Text="{Binding LightbarBatteryHexColor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                         CharacterCasing="Upper"
+                                                         MaxLength="7"
+                                                         Style="{StaticResource JsmccTextBoxStyle}"/>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <ItemsControl ItemsSource="{Binding LightbarPresetColors}"
+                                                      Margin="0,10,0,0"
+                                                      Visibility="{Binding IsBatteryLightbarMode, Converter={StaticResource BoolToVis}}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid Columns="9" Rows="2"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Tag="{Binding HexColor}"
+                                                            ToolTip="{Binding HexColor}"
+                                                            Background="{Binding Brush}"
+                                                            BorderBrush="{DynamicResource JsmccBorderStrongBrush}"
+                                                            Click="LightbarBatteryPreset_Click"
+                                                            Style="{StaticResource LightbarPresetButtonStyle}"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            </DockPanel>
+        </Grid>
+
+        <Grid x:Name="profilesOverlay" Visibility="Collapsed">
+            <Rectangle Fill="#AA000000"
+                       MouseLeftButtonDown="ProfilesOverlayBackdrop_MouseDown"/>
+
+            <Border MaxWidth="540"
+                    MaxHeight="820"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Margin="20"
+                    Style="{StaticResource JsmccPanelBorder}"
+                    Effect="{x:Null}">
+                <ScrollViewer x:Name="profilesOverlayScrollViewer" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <DockPanel LastChildFill="True" Margin="0,0,0,16">
+                            <Button Content="X"
+                                    Click="CloseProfileOverlay_Click"
+                                    DockPanel.Dock="Right"
+                                    Width="34" Height="34"
+                                    Padding="0"
+                                    Margin="8,0,0,0"
+                                    Style="{StaticResource JsmccButtonStyle}"/>
+                            <TextBlock Text="Manage Profiles"
+                                       Style="{StaticResource JsmccSectionTitle}"
+                                       VerticalAlignment="Center"/>
+                        </DockPanel>
+
+                        <WrapPanel Margin="0,0,0,14">
+                            <Button Content="New Profile"
+                                    Click="NewProfileBtn_Click"
+                                    Style="{StaticResource JsmccButtonStyle}"
+                                    Margin="0,0,8,6"/>
+                            <Button Content="Copy Active"
+                                    Click="CopyActiveBtn_Click"
+                                    Style="{StaticResource JsmccButtonStyle}"
+                                    Margin="0,0,8,6"/>
+                            <Button Content="Load from File..."
+                                    Click="LoadProfileFileBtn_Click"
+                                    Style="{StaticResource JsmccButtonStyle}"
+                                    Margin="0,0,0,6"/>
+                        </WrapPanel>
+
+                        <Border x:Name="newProfilePanel"
+                                Visibility="Collapsed"
+                                Style="{StaticResource JsmccCardBorder}"
+                                Padding="12"
+                                Margin="0,0,0,14">
+                            <StackPanel>
+                                <TextBlock Text="New Profile"
+                                           Style="{StaticResource JsmccCardTitle}"/>
+                                <TextBlock Text="Create a profile for the current controller."
+                                           Style="{StaticResource JsmccMutedText}"
+                                           Margin="0,3,0,12"/>
+
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Text="Profile Name"
+                                               Style="{StaticResource JsmccLabelText}"
+                                               Margin="0,0,0,4"/>
+                                    <TextBox Text="{Binding ProfileName, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
+                                             Validation.ErrorTemplate="{x:Null}"
+                                             Style="{StaticResource JsmccTextBoxStyle}"/>
+                                    <TextBlock Text="{Binding ProfileNameErrors}"
+                                               Foreground="{DynamicResource JsmccDangerTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0"
+                                               Visibility="{Binding HasProfileNameError, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Text="Profile Path"
+                                               Style="{StaticResource JsmccLabelText}"
+                                               Margin="0,0,0,4"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0"
+                                                 Text="{Binding ProfileFolder, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
+                                                 Validation.ErrorTemplate="{x:Null}"
+                                                 Style="{StaticResource JsmccTextBoxStyle}"/>
+                                        <Button Grid.Column="1"
+                                                Content="Browse"
+                                                Click="NewProfileBrowseBtn_Click"
+                                                Style="{StaticResource JsmccButtonStyle}"
+                                                Margin="8,0,0,0"/>
+                                    </Grid>
+                                    <TextBlock Text="{Binding ProfileFolderErrors}"
+                                               Foreground="{DynamicResource JsmccDangerTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0"
+                                               Visibility="{Binding HasProfileFolderError, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Text="Output Controller Type"
+                                               Style="{StaticResource JsmccLabelText}"
+                                               Margin="0,0,0,4"/>
+                                    <ComboBox ItemsSource="{Binding OutputContList}"
+                                              SelectedIndex="{Binding OutputControllerTypeIdx, Mode=TwoWay}"
+                                              DisplayMemberPath="Name"
+                                              Style="{StaticResource ComboBoxBaseStyle}"
+                                              MinWidth="180"/>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Button Content="Cancel"
+                                            Click="CancelNewProfileBtn_Click"
+                                            Style="{StaticResource JsmccButtonStyle}"
+                                            Margin="0,0,8,0"/>
+                                    <Button Content="Create"
+                                            Click="CreateNewProfileBtn_Click"
+                                            Style="{StaticResource JsmccPrimaryButtonStyle}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <ListBox x:Name="profileListBox"
+                                 MaxHeight="240"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 Background="{DynamicResource JsmccBgInputBrush}"
+                                 BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                 Foreground="{DynamicResource JsmccTextStrongBrush}"
+                                 SelectionChanged="ProfileListBox_SelectionChanged"
+                                 Loaded="ProfileListBox_Loaded"
+                                 Padding="0">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="10,8"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource JsmccTextStrongBrush}"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="*"
+                                                   Foreground="{DynamicResource JsmccAccentBrush}"
+                                                   FontSize="13"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,8,0">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Hidden"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding Name}"
+                                                   Foreground="{DynamicResource JsmccTextStrongBrush}"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="13"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <Border x:Name="selectedProfilePanel"
+                                Visibility="Collapsed"
+                                Margin="0,14,0,0"
+                                Padding="0,14,0,0">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="Name"
+                                               Style="{StaticResource OverlayLabel}"/>
+                                    <TextBox x:Name="profileRenameBox"
+                                             Width="210"
+                                             Style="{StaticResource JsmccTextBoxStyle}"/>
+                                    <Button Content="Save Name"
+                                            Click="RenameProfileBtn_Click"
+                                            Margin="8,0,0,0"
+                                            Style="{StaticResource JsmccButtonStyle}"/>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Button Content="Delete"
+                                            Click="DeleteProfileBtn_Click"
+                                            Style="{StaticResource JsmccDangerButtonStyle}"
+                                            Margin="0,0,10,0"/>
+                                    <Button Content="Load This Profile"
+                                            Click="LoadProfileFromListBtn_Click"
+                                            Style="{StaticResource JsmccPrimaryButtonStyle}"/>
+                                </StackPanel>
+                                <TextBlock x:Name="deleteActiveProfileWarningText"
+                                           Text="Switch to a different profile before deleting this one."
+                                           Foreground="{DynamicResource JsmccDangerTextBrush}"
+                                           TextWrapping="Wrap"
+                                           TextAlignment="Right"
+                                           Margin="0,6,0,0"
+                                           Visibility="Collapsed"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
-                </TabItem.Header>
-                <DockPanel LastChildFill="True">
-                    <StackPanel DockPanel.Dock="Bottom" Margin="6,10,6,10" Orientation="Vertical">
-                        <Button x:Name="serviceChangeBtn" Content="{Binding ServiceBtnText,Mode=OneWay,FallbackValue='Start'}" Click="Button_Click" HorizontalAlignment="Stretch" />
-                    </StackPanel>
-
-                    <DockPanel DockPanel.Dock="Top">
-                        <ListView x:Name="deviceListView" ItemsSource="{Binding ControllerList}" SelectedIndex="{Binding SelectedIndex, FallbackValue='-1'}" MouseDoubleClick="DeviceListView_MouseDoubleClick">
-                            <ListView.View>
-                                <GridView>
-                                    <GridView.Columns>
-                                        <GridViewColumn Header="#" Width="30">
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding DisplayIndex}" />
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-                                        <GridViewColumn Header="ID" Width="200">
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding DisplayName}" />
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-                                        <GridViewColumn Header="Bat." Width="60">
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding Battery}" />
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-                                        <GridViewColumn x:Name="profileOptionsColumn" Width="150">
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <ComboBox ItemsSource="{Binding DevProfileList}" DisplayMemberPath="Name" SelectedIndex="{Binding ProfileIndex, FallbackValue='0'}" Visibility="{Binding PrimaryDevice, Converter={StaticResource BooleanToVisibilityConverter}}" MinWidth="130" />
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-                                        <GridViewColumn>
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <hc:SplitButton Content="Edit" Command="{Binding EditProfCommand}" CommandParameter="Hurricane" Visibility="{Binding PrimaryDevice, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <hc:SplitButton.DropDownContent>
-                                                            <StackPanel>
-                                                                <MenuItem Header="New" Click="NewProfMenuItem_Click" Tag="{Binding ItemIndex}" />
-                                                                <MenuItem Header="Duplicate" Click="DuplicateMenuItem_Click" Tag="{Binding ItemIndex}" />
-                                                            </StackPanel>
-                                                        </hc:SplitButton.DropDownContent>
-                                                    </hc:SplitButton>
-                                                    <!--<Button x:Name="editPro" Content="Edit" Width="50" Click="EditPro_Click" />-->
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-                                        <GridViewColumn Width="50">
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <Button x:Name="contSettingsBtn" Content="🎮" Click="ContSettingsBtn_Click"
-                                                Tag="{Binding ItemIndex}" ToolTip="Controller Settings" />
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-                                    </GridView.Columns>
-                                </GridView>
-                            </ListView.View>
-                        </ListView>
-                    </DockPanel>
-                </DockPanel>
-            </TabItem>
-            <TabItem>
-                <TabItem.Header>
-                    <StackPanel Orientation="Horizontal">
-                        <Image Width="16" Source="/images/circle-info-solid.png" />
-                        <TextBlock Text="About" Margin="8,0,0,0" />
-                    </StackPanel>
-                </TabItem.Header>
-                <DockPanel Margin="8">
-                    <StackPanel Orientation="Vertical">
-                        <TextBlock Text="DS4MapperTest">
-                        </TextBlock>
-
-                        <TextBlock>
-                            <TextBlock.Text>
-                                <Binding Path="VersionText" StringFormat="{}version {0}" />
-                            </TextBlock.Text>
-                        </TextBlock>
-                    </StackPanel>
-
-                </DockPanel>
-            </TabItem>
-        </TabControl>
-
-    </DockPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </Grid>
 </Window>

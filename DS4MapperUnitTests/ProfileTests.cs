@@ -22,20 +22,23 @@ namespace DS4MapperUnitTests
             daggerFallProfileStr = @"{
   ""Name"": ""Daggerfall"",
   ""Description"": ""Daggerfall"",
-  ""Creator"": ""ryochan7"",
   ""CreationDate"": ""2023-10-27T02:05:40.4042828Z"",
   ""ProfileSpecVersion"": 2,
   ""OutputGamepadSettings"": {
     ""Enabled"": false
   },
+  ""CalibRwc"": 14.2857,
+  ""CalibInGameSens"": 1.0,
+  ""CalibCounts"": 5142.852,
+  ""CalibMode"": ""CountsMode"",
+  ""CalibPreset"": ""VALORANT"",
   ""LightbarSettings"": {
     ""Mode"": ""SolidColor"",
     ""SolidColor"": {
       ""red"": 0,
       ""green"": 0,
       ""blue"": 255
-    },
-    ""RainbowSecondsCycle"": 5
+    }
   },
   ""ActionSets"": [
     {
@@ -115,7 +118,6 @@ namespace DS4MapperUnitTests
               ""Settings"": {
                 ""DeadZone"": 8,
                 ""TrackballFriction"": 8,
-                ""Sensitivity"": 1.0,
                 ""VerticalScale"": 1.0,
                 ""SmoothingEnabled"": true,
                 ""SmoothingMinCutoff"": 2.0,
@@ -359,7 +361,6 @@ namespace DS4MapperUnitTests
               ""Id"": 0,
               ""ActionMode"": ""TouchMouseAction"",
               ""Settings"": {
-                ""Sensitivity"": 1.0,
                 ""VerticalScale"": 1.0
               }
             },
@@ -493,7 +494,6 @@ namespace DS4MapperUnitTests
               ""Id"": 0,
               ""ActionMode"": ""TouchMouseAction"",
               ""Settings"": {
-                ""Sensitivity"": 1.0,
                 ""VerticalScale"": 1.0
               }
             },
@@ -670,20 +670,23 @@ namespace DS4MapperUnitTests
             daggerFallGyroMouseProfileStr = @"{
   ""Name"": ""Daggerfall"",
   ""Description"": ""Daggerfall"",
-  ""Creator"": ""ryochan7"",
   ""CreationDate"": ""2023-10-27T02:05:40.4042828Z"",
   ""ProfileSpecVersion"": 2,
   ""OutputGamepadSettings"": {
     ""Enabled"": false
   },
+  ""CalibRwc"": 14.2857,
+  ""CalibInGameSens"": 1.0,
+  ""CalibCounts"": 5142.852,
+  ""CalibMode"": ""CountsMode"",
+  ""CalibPreset"": ""VALORANT"",
   ""LightbarSettings"": {
     ""Mode"": ""SolidColor"",
     ""SolidColor"": {
       ""red"": 0,
       ""green"": 0,
       ""blue"": 255
-    },
-    ""RainbowSecondsCycle"": 5
+    }
   },
   ""ActionSets"": [
     {
@@ -763,7 +766,6 @@ namespace DS4MapperUnitTests
               ""Settings"": {
                 ""DeadZone"": 8,
                 ""TrackballFriction"": 8,
-                ""Sensitivity"": 1.0,
                 ""VerticalScale"": 1.0,
                 ""SmoothingEnabled"": true,
                 ""SmoothingMinCutoff"": 2.0,
@@ -1001,16 +1003,14 @@ namespace DS4MapperUnitTests
               ""Id"": 13,
               ""ActionMode"": ""GyroMouseAction"",
               ""Settings"": {
-                ""DeadZone"": 0.6,
-                ""RealWorlCalibration"": 5.0,
-                ""InGameSens"": 1.0,
-                ""Sensitivity"": 1.0,
-                ""VerticalScale"": 1.0,
+                ""DeadZone"": 0.2,
+                ""Sensitivity"": 4.0,
+                ""VerticalScale"": 0.6,
                 ""InvertX"": false,
                 ""InvertY"": false,
                 ""TriggerButtons"": ""AlwaysOn"",
                 ""TriggerActivates"": true,
-                ""EvalCond"": ""And"",
+                ""EvalCond"": ""Or"",
                 ""UseForXAxis"": ""Yaw"",
                 ""MinThreshold"": 0.0,
                 ""Toggle"": false
@@ -1026,7 +1026,6 @@ namespace DS4MapperUnitTests
               ""Id"": 0,
               ""ActionMode"": ""TouchMouseAction"",
               ""Settings"": {
-                ""Sensitivity"": 1.0,
                 ""VerticalScale"": 1.0
               }
             },
@@ -1091,7 +1090,6 @@ namespace DS4MapperUnitTests
               ""Id"": 0,
               ""ActionMode"": ""TouchMouseAction"",
               ""Settings"": {
-                ""Sensitivity"": 1.0,
                 ""VerticalScale"": 1.0
               }
             },
@@ -1482,6 +1480,36 @@ namespace DS4MapperUnitTests
                 });
 
             Assert.AreEqual(daggerFallGyroMouseProfileStr, tempOutJson);
+        }
+
+        [TestMethod]
+        public void GyroMouseAccelerationMaxYSensitivityZeroRoundTrips()
+        {
+            GyroMouse mouseAction = new GyroMouse();
+            mouseAction.Id = 13;
+            mouseAction.mouseParams.accelCurve = GyroMouseAccelCurveChoice.Linear;
+            mouseAction.mouseParams.maxAccelYSens = 0.0;
+            mouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.MAX_ACCEL_Y_SENS);
+
+            GyroMouseSerializer profileSerializer =
+                new GyroMouseSerializer(null, mouseAction);
+            string json = JsonConvert.SerializeObject(
+                profileSerializer,
+                Formatting.Indented);
+
+            Assert.IsTrue(json.Contains(@"""MaxAccelYSens"": 0.0"));
+
+            GyroMouseSerializer reloadedSerializer = new GyroMouseSerializer();
+            JsonConvert.PopulateObject(json, reloadedSerializer);
+            reloadedSerializer.Settings.DeadZone = 0.35;
+            string resavedJson = JsonConvert.SerializeObject(
+                reloadedSerializer,
+                Formatting.Indented);
+
+            GyroMouse reloadedAction =
+                (GyroMouse)reloadedSerializer.MapAction;
+            Assert.AreEqual(0.0, reloadedAction.mouseParams.maxAccelYSens);
+            Assert.IsTrue(resavedJson.Contains(@"""MaxAccelYSens"": 0.0"));
         }
     }
 }

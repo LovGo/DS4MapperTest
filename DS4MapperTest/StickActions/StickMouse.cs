@@ -7,6 +7,8 @@ using DS4MapperTest.MapperUtil;
 using DS4MapperTest.AxisModifiers;
 using DS4MapperTest.StickModifiers;
 using DS4MapperTest.ActionUtil;
+using DS4MapperTest.ButtonActions;
+using DS4MapperTest.MouseModifiers;
 using System.Diagnostics;
 
 namespace DS4MapperTest.StickActions
@@ -18,74 +20,24 @@ namespace DS4MapperTest.StickActions
 
     public class StickMouse : StickMapAction
     {
-        public class DeltaAccelSettings
-        {
-            public bool enabled = false;
-            public double multiplier = 4.0;
-            public double maxTravel = 0.2;
-            public double minTravel = 0.01;
-            public double easingDuration = 0.2;
-            public double minfactor = 1.0;
-
-            public bool Enabled
-            {
-                get => enabled;
-                set => enabled = value;
-            }
-
-            public double Multiplier
-            {
-                get => multiplier;
-                set => multiplier = value;
-            }
-
-            public double MaxTravel
-            {
-                get => maxTravel;
-                set => maxTravel = value;
-            }
-
-            public double MinTravel
-            {
-                get => minTravel;
-                set => minTravel = value;
-            }
-
-            public double EasingDuration
-            {
-                get => easingDuration;
-                set => easingDuration = value;
-            }
-
-            public double MinFactor
-            {
-                get => minfactor;
-                set => minfactor = value;
-            }
-
-            public DeltaAccelSettings()
-            {
-            }
-
-            public DeltaAccelSettings(DeltaAccelSettings source)
-            {
-                enabled = source.enabled;
-                multiplier = source.multiplier;
-                maxTravel = source.maxTravel;
-                minTravel = source.minTravel;
-                easingDuration = source.easingDuration;
-                minfactor = source.minfactor;
-            }
-        }
-
         public class PropertyKeyStrings
         {
             public const string NAME = "Name";
             public const string DEAD_ZONE = "DeadZone";
             public const string MAX_ZONE = "MaxZone";
+            public const string DIR_UP = "DirUp";
+            public const string DIR_DOWN = "DirDown";
+            public const string DIR_LEFT = "DirLeft";
+            public const string DIR_RIGHT = "DirRight";
+            public const string DIAGONAL_RANGE = "DiagonalRange";
             public const string OUTPUT_CURVE = "OutputCurve";
-            public const string MOUSE_SPEED = "MouseSpeed";
+            public const string DEGREES_PER_SECOND = "DegreesPerSecond";
             public const string DELTA_SETTINGS = "DeltaSettings";
+            public const string VERTICAL_SCALE = "VerticalScale";
+            public const string MULTIPLIER_COMPENSATION = "MultiplierCompensation";
+            public const string ACCELERATION_MULTIPLIER = "AccelerationMultiplier";
+            public const string VERTICAL_ACCELERATION_MULTIPLIER = "VerticalAccelerationMultiplier";
+            public const string VERTICAL_ACCELERATION_SCALE_MODE = "VerticalAccelerationScaleMode";
         }
 
         private HashSet<string> fullPropertySet = new HashSet<string>()
@@ -93,39 +45,113 @@ namespace DS4MapperTest.StickActions
             PropertyKeyStrings.NAME,
             PropertyKeyStrings.DEAD_ZONE,
             PropertyKeyStrings.MAX_ZONE,
+            PropertyKeyStrings.DIR_UP,
+            PropertyKeyStrings.DIR_DOWN,
+            PropertyKeyStrings.DIR_LEFT,
+            PropertyKeyStrings.DIR_RIGHT,
+            PropertyKeyStrings.DIAGONAL_RANGE,
             PropertyKeyStrings.OUTPUT_CURVE,
-            PropertyKeyStrings.MOUSE_SPEED,
+            PropertyKeyStrings.DEGREES_PER_SECOND,
             PropertyKeyStrings.DELTA_SETTINGS,
+            PropertyKeyStrings.VERTICAL_SCALE,
+            PropertyKeyStrings.MULTIPLIER_COMPENSATION,
+            PropertyKeyStrings.ACCELERATION_MULTIPLIER,
+            PropertyKeyStrings.VERTICAL_ACCELERATION_MULTIPLIER,
+            PropertyKeyStrings.VERTICAL_ACCELERATION_SCALE_MODE,
         };
 
-        private const int MOUSESPEEDFACTOR = 20;
-        private const double MOUSESTICKOFFSET = 0.0495;
-        private const int MOUSESPEED = 100;
-        //private const double MOUSE_VELOCITY_OFFSET = 0.12;
-        private const double MOUSE_VELOCITY_OFFSET = 0.013;
+        public const double DefaultDegreesPerSecond = 360.0;
+        public const double MaxDegreesPerSecond = 7200.0;
+        public const double DefaultVerticalScale = MouseMotionSettings.DefaultVerticalScale;
+        public const double MaxVerticalScale = MouseMotionSettings.MaxVerticalScale;
+        public const int DefaultDiagonalRange = 90;
+        public const bool DefaultMultiplierCompensation = false;
+        public const double DefaultAccelerationMultiplier = 1.0;
+        public const double DefaultVerticalAccelerationMultiplier = 1.0;
+        public const bool DefaultVerticalAccelerationScaleMode = true;
+        public const double MinAccelerationMultiplier = 0.01;
+        public const double MaxAccelerationMultiplier = 100.0;
         public const string ACTION_TYPE_NAME = "StickMouseAction";
 
         private StickDeadZone deadMod;
-        private StickOutCurve.Curve outputCurve = StickOutCurve.Curve.Linear;
+        private MouseMotionSettings motion = new MouseMotionSettings();
+        private AxisDirButton[] dirButtons = new AxisDirButton[4];
+        public AxisDirButton[] DirButtons { get => dirButtons; set => dirButtons = value; }
         //private StickDefinition stickDefinition;
         private double xNorm = 0.0, yNorm = 0.0;
         private double xMotion;
         private double yMotion;
-        private int mouseSpeed = MOUSESPEED;
-        public int MouseSpeed { get => mouseSpeed; set => mouseSpeed = value; }
+        private bool[] slotOn = new bool[4];
+        public bool LegacyMouseSpeedLoaded { get; set; }
+
+        public enum DirSlot : int
+        {
+            Up = 0,
+            Down = 1,
+            Left = 2,
+            Right = 3,
+        }
+        private double degreesPerSecond = DefaultDegreesPerSecond;
+        public double DegreesPerSecond
+        {
+            get => degreesPerSecond;
+            set => degreesPerSecond = double.IsFinite(value)
+                ? Math.Clamp(value, 0.0, MaxDegreesPerSecond)
+                : DefaultDegreesPerSecond;
+        }
+
+        public double VerticalScale
+        {
+            get => motion.VerticalScale;
+            set => motion.VerticalScale = value;
+        }
+
+        private int diagonalRange = DefaultDiagonalRange;
+        public int DiagonalRange
+        {
+            get => diagonalRange;
+            set => diagonalRange = Math.Clamp(value, 0, 90);
+        }
+
+        private bool multiplierCompensation = DefaultMultiplierCompensation;
+        public bool MultiplierCompensation
+        {
+            get => multiplierCompensation;
+            set => multiplierCompensation = value;
+        }
+
+        private double accelerationMultiplier = DefaultAccelerationMultiplier;
+        public double AccelerationMultiplier
+        {
+            get => accelerationMultiplier;
+            set => accelerationMultiplier = Math.Clamp(value, MinAccelerationMultiplier, MaxAccelerationMultiplier);
+        }
+
+        private double verticalAccelerationMultiplier = DefaultVerticalAccelerationMultiplier;
+        public double VerticalAccelerationMultiplier
+        {
+            get => verticalAccelerationMultiplier;
+            set => verticalAccelerationMultiplier = Math.Clamp(value, MinAccelerationMultiplier, MaxAccelerationMultiplier);
+        }
+
+        private bool verticalAccelerationScaleMode = DefaultVerticalAccelerationScaleMode;
+        public bool VerticalAccelerationScaleMode
+        {
+            get => verticalAccelerationScaleMode;
+            set => verticalAccelerationScaleMode = value;
+        }
 
         public StickDeadZone DeadMod { get => deadMod; }
         public StickOutCurve.Curve OutputCurve
         {
-            get => outputCurve;
-            set => outputCurve = value;
+            get => motion.OutputCurve;
+            set => motion.OutputCurve = value;
         }
 
-        private DeltaAccelSettings mouseDeltaSettings = new DeltaAccelSettings();
-        public DeltaAccelSettings MouseDeltaSettings
+        public MouseMotionSettings.DeltaAccelSettings MouseDeltaSettings
         {
-            get => mouseDeltaSettings;
-            set => mouseDeltaSettings = value;
+            get => motion.DeltaSettings;
+            set => motion.DeltaSettings = value;
         }
 
         public StickMouse()
@@ -134,6 +160,7 @@ namespace DS4MapperTest.StickActions
             //deadMod = new StickDeadZone(0.10, 0.9, 0.0);
             deadMod = new StickDeadZone(0.10, 1.0, 0.0);
             deadMod.CircleDead = true;
+            FillDirectionButtons();
         }
 
         public StickMouse(StickDefinition stickDefinition)
@@ -143,6 +170,7 @@ namespace DS4MapperTest.StickActions
             //deadMod = new StickDeadZone(0.10, 0.9, 0.0);
             deadMod = new StickDeadZone(0.10, 1.0, 0.0);
             deadMod.CircleDead = true;
+            FillDirectionButtons();
         }
 
         public StickMouse(StickMouse parentAction)
@@ -153,7 +181,35 @@ namespace DS4MapperTest.StickActions
             mappingId = parentAction.mappingId;
             this.stickDefinition = new StickDefinition(parentAction.stickDefinition);
             deadMod = new StickDeadZone(parentAction.deadMod);
-            mouseSpeed = parentAction.mouseSpeed;
+            motion = new MouseMotionSettings(parentAction.motion);
+            degreesPerSecond = parentAction.degreesPerSecond;
+            multiplierCompensation = parentAction.multiplierCompensation;
+            accelerationMultiplier = parentAction.accelerationMultiplier;
+            verticalAccelerationMultiplier = parentAction.verticalAccelerationMultiplier;
+            verticalAccelerationScaleMode = parentAction.verticalAccelerationScaleMode;
+            for (int i = 0; i < dirButtons.Length; i++)
+            {
+                AxisDirButton srcBtn = parentAction.dirButtons[i];
+                dirButtons[i] = srcBtn != null ? (AxisDirButton)srcBtn.DuplicateAction() : null;
+            }
+        }
+
+        private void FillDirectionButtons()
+        {
+            AxisDirButton.AxisDirection[] axisDirs =
+            {
+                AxisDirButton.AxisDirection.YNeg,
+                AxisDirButton.AxisDirection.YPos,
+                AxisDirButton.AxisDirection.XNeg,
+                AxisDirButton.AxisDirection.XPos,
+            };
+
+            for (int i = 0; i < dirButtons.Length; i++)
+            {
+                AxisDirButton tempBtn = new AxisDirButton();
+                tempBtn.Direction = axisDirs[i];
+                dirButtons[i] = tempBtn;
+            }
         }
 
         double previousPointerX = 0.0;
@@ -195,9 +251,9 @@ namespace DS4MapperTest.StickActions
 
             if (xNorm != 0.0 || yNorm != 0.0)
             {
-                if (outputCurve != StickOutCurve.Curve.Linear)
+                if (motion.OutputCurve != StickOutCurve.Curve.Linear)
                 {
-                    StickOutCurve.CalcOutValue(outputCurve, xNorm, yNorm,
+                    StickOutCurve.CalcOutValue(motion.OutputCurve, xNorm, yNorm,
                         out xNorm, out yNorm);
                     //StickOutCurve.CalcOutValue(StickOutCurve.Curve.EnhancedPrecision, xNorm, yNorm,
                     //    out xNorm, out yNorm);
@@ -220,12 +276,12 @@ namespace DS4MapperTest.StickActions
                 double tempRatioY = capY > 0 ? rawYNorm / capY : 0;
 
                 // Calculate delta acceleration slope and offset.
-                bool testDeltaAccel = mouseDeltaSettings.enabled;
-                double testAccelMulti = mouseDeltaSettings.multiplier;
-                double testAccelMaxTravel = mouseDeltaSettings.maxTravel;
-                double testAccelMinTravel = mouseDeltaSettings.minTravel;
-                double testAccelEasingDuration = mouseDeltaSettings.easingDuration;
-                double minfactor = Math.Max(1.0, mouseDeltaSettings.minfactor); // default 1.0
+                bool testDeltaAccel = motion.DeltaSettings.Enabled;
+                double testAccelMulti = motion.DeltaSettings.Multiplier;
+                double testAccelMaxTravel = motion.DeltaSettings.MaxTravel;
+                double testAccelMinTravel = motion.DeltaSettings.MinTravel;
+                double testAccelEasingDuration = motion.DeltaSettings.EasingDuration;
+                double minfactor = Math.Max(1.0, motion.DeltaSettings.MinFactor); // default 1.0
                 double minTravelStop = Math.Max(0.1, testAccelMinTravel);
 
                 double accelSlope = (testAccelMulti - minfactor) / (testAccelMaxTravel - testAccelMinTravel);
@@ -368,35 +424,103 @@ namespace DS4MapperTest.StickActions
                     }
                 }
 
+                ApplyDiagonalRange(ref outXNorm, ref outYNorm);
+
                 double timeDelta = mapper.CurrentLatency;
                 timeDelta = timeDelta - (mapper.remainderCutoff(timeDelta * 10000.0, 1.0) / 10000.0);
-                int mouseVelocity = mouseSpeed * MOUSESPEEDFACTOR;
-                double mouseOffset = MOUSE_VELOCITY_OFFSET * mouseVelocity;
+                double countsPer360 = mapper.ActionProfile.CalibCounts;
+                double horizontalCountsPerSecond = countsPer360 > 0.0
+                    ? (degreesPerSecond / 360.0) * countsPer360
+                    : 0.0;
+                double verticalCountsPerSecond = horizontalCountsPerSecond *
+                    motion.VerticalScale;
 
-                double xSign = xNorm >= 0.0 ? 1.0 : -1.0;
-                double ySign = yNorm >= 0.0 ? 1.0 : -1.0;
-                double absXNorm = Math.Abs(outXNorm);
-                double absYNorm = Math.Abs(outYNorm);
-                double tempMouseOffsetX = unitXRatio * mouseOffset;
-                double tempMouseOffsetY = unitYRatio * mouseOffset;
+                xMotion = horizontalCountsPerSecond * timeDelta * outXNorm;
+                yMotion = -verticalCountsPerSecond * timeDelta * outYNorm;
 
-                xMotion = ((mouseVelocity - tempMouseOffsetX) * timeDelta * absXNorm + (tempMouseOffsetX * timeDelta)) * xSign;
-                yMotion = ((mouseVelocity - tempMouseOffsetY) * timeDelta * absYNorm + (tempMouseOffsetY * timeDelta)) * -ySign;
+                if (multiplierCompensation)
+                {
+                    double accelMultiplier = Math.Clamp(accelerationMultiplier,
+                        MinAccelerationMultiplier, MaxAccelerationMultiplier);
+                    double verticalAccelMultiplier = Math.Clamp(verticalAccelerationMultiplier,
+                        MinAccelerationMultiplier, MaxAccelerationMultiplier);
+                    xMotion /= accelMultiplier;
+                    yMotion /= verticalAccelMultiplier;
+                }
+
+                for (int i = 0; i < slotOn.Length; i++)
+                {
+                    slotOn[i] = false;
+                }
+
+                // Direction binds fire off the raw, dead zone-adjusted stick position (with
+                // diagonal range applied the same way it shapes the D-Pad-style modes), not
+                // off outXNorm/outYNorm: those have already been through the output curve,
+                // delta acceleration and mouse-speed scaling, so a stick held steady past the
+                // dead zone can settle back toward zero output there even though the stick
+                // itself never returned to centre. double.Epsilon (~5E-324) is also not a
+                // meaningful "outside the dead zone" tolerance; xNorm/yNorm are already exact
+                // zero within the dead zone (StickDeadZone.CalcOutValues), so any genuinely
+                // non-zero result here already means past it.
+                double dirXNorm = xNorm, dirYNorm = yNorm;
+                ApplyDiagonalRange(ref dirXNorm, ref dirYNorm);
+
+                if (dirYNorm > 0.0)
+                {
+                    slotOn[(int)DirSlot.Up] = true;
+                }
+                else if (dirYNorm < 0.0)
+                {
+                    slotOn[(int)DirSlot.Down] = true;
+                }
+
+                if (dirXNorm > 0.0)
+                {
+                    slotOn[(int)DirSlot.Right] = true;
+                }
+                else if (dirXNorm < 0.0)
+                {
+                    slotOn[(int)DirSlot.Left] = true;
+                }
 
                 active = true;
                 activeEvent = true;
+            }
+            else
+            {
+                xMotion = 0.0;
+                yMotion = 0.0;
+                active = false;
+                activeEvent = false;
+                for (int i = 0; i < slotOn.Length; i++)
+                {
+                    slotOn[i] = false;
+                }
             }
         }
 
         public override void Event(Mapper mapper)
         {
-            mapper.MouseX = xMotion; mapper.MouseY = yMotion;
-            mapper.MouseSync = true;
+            mapper.SetRouteRelativeMouseMotion(MouseOutputRoute.JoystickMouse, xMotion, yMotion);
+            mapper.SetRouteRelativeMouseSync(MouseOutputRoute.JoystickMouse, true);
+
+            bool anyButtonActive = false;
+            for (int i = 0; i < dirButtons.Length; i++)
+            {
+                AxisDirButton btn = dirButtons[i];
+                if (btn == null) continue;
+
+                double val = slotOn[i] ? 1.0 : 0.0;
+                btn.PrepareAnalog(mapper, val, val);
+                btn.Event(mapper);
+                if (btn.active) anyButtonActive = true;
+            }
+
             if (xNorm != 0.0 || yNorm != 0.0)
             {
                 active = true;
             }
-            else
+            else if (!anyButtonActive)
             {
                 active = false;
             }
@@ -409,6 +533,20 @@ namespace DS4MapperTest.StickActions
             xMotion = yMotion = 0.0;
             active = false;
             activeEvent = false;
+            for (int i = 0; i < dirButtons.Length; i++)
+            {
+                AxisDirButton btn = dirButtons[i];
+                if (btn == null) continue;
+
+                btn.PrepareAnalog(mapper, 0.0, 0.0);
+                btn.Event(mapper);
+                btn.Release(mapper, resetState, ignoreReleaseActions);
+            }
+
+            for (int i = 0; i < slotOn.Length; i++)
+            {
+                slotOn[i] = false;
+            }
 
             //if (resetState)
             //{
@@ -421,11 +559,58 @@ namespace DS4MapperTest.StickActions
             return new StickMouse(this);
         }
 
+        private void ApplyDiagonalRange(ref double outXNorm, ref double outYNorm)
+        {
+            if (diagonalRange >= 90)
+            {
+                return;
+            }
+
+            double absX = Math.Abs(outXNorm);
+            double absY = Math.Abs(outYNorm);
+            if (absX <= double.Epsilon || absY <= double.Epsilon)
+            {
+                return;
+            }
+
+            double angle = Math.Atan2(absY, absX) * (180.0 / Math.PI);
+            double halfRange = diagonalRange * 0.5;
+            double diagonalStart = 45.0 - halfRange;
+            double diagonalEnd = 45.0 + halfRange;
+            if (angle >= diagonalStart && angle <= diagonalEnd)
+            {
+                return;
+            }
+
+            if (absX >= absY)
+            {
+                outYNorm = 0.0;
+            }
+            else
+            {
+                outXNorm = 0.0;
+            }
+        }
+
         public override void SoftRelease(Mapper mapper, MapAction _, bool resetState = true)
         {
             xMotion = yMotion = 0.0;
             active = false;
             activeEvent = false;
+            for (int i = 0; i < dirButtons.Length; i++)
+            {
+                AxisDirButton btn = dirButtons[i];
+                if (btn == null) continue;
+
+                btn.PrepareAnalog(mapper, 0.0, 0.0);
+                btn.Event(mapper);
+                btn.Release(mapper, resetState);
+            }
+
+            for (int i = 0; i < slotOn.Length; i++)
+            {
+                slotOn[i] = false;
+            }
         }
 
         public override void SoftCopyFromParent(StickMapAction parentAction)
@@ -461,14 +646,44 @@ namespace DS4MapperTest.StickActions
                         case PropertyKeyStrings.MAX_ZONE:
                             deadMod.MaxZone = tempMouseAction.deadMod.MaxZone;
                             break;
-                        case PropertyKeyStrings.OUTPUT_CURVE:
-                            outputCurve = tempMouseAction.outputCurve;
+                        case PropertyKeyStrings.DIR_UP:
+                            CopyDirButton((int)DirSlot.Up, tempMouseAction);
                             break;
-                        case PropertyKeyStrings.MOUSE_SPEED:
-                            mouseSpeed = tempMouseAction.mouseSpeed;
+                        case PropertyKeyStrings.DIR_DOWN:
+                            CopyDirButton((int)DirSlot.Down, tempMouseAction);
+                            break;
+                        case PropertyKeyStrings.DIR_LEFT:
+                            CopyDirButton((int)DirSlot.Left, tempMouseAction);
+                            break;
+                        case PropertyKeyStrings.DIR_RIGHT:
+                            CopyDirButton((int)DirSlot.Right, tempMouseAction);
+                            break;
+                        case PropertyKeyStrings.DIAGONAL_RANGE:
+                            diagonalRange = tempMouseAction.diagonalRange;
+                            break;
+                        case PropertyKeyStrings.OUTPUT_CURVE:
+                            motion.OutputCurve = tempMouseAction.motion.OutputCurve;
+                            break;
+                        case PropertyKeyStrings.DEGREES_PER_SECOND:
+                            degreesPerSecond = tempMouseAction.degreesPerSecond;
                             break;
                         case PropertyKeyStrings.DELTA_SETTINGS:
-                            mouseDeltaSettings = new DeltaAccelSettings(tempMouseAction.mouseDeltaSettings);
+                            motion.DeltaSettings = new MouseMotionSettings.DeltaAccelSettings(tempMouseAction.motion.DeltaSettings);
+                            break;
+                        case PropertyKeyStrings.VERTICAL_SCALE:
+                            motion.VerticalScale = tempMouseAction.motion.VerticalScale;
+                            break;
+                        case PropertyKeyStrings.MULTIPLIER_COMPENSATION:
+                            multiplierCompensation = tempMouseAction.multiplierCompensation;
+                            break;
+                        case PropertyKeyStrings.ACCELERATION_MULTIPLIER:
+                            accelerationMultiplier = tempMouseAction.accelerationMultiplier;
+                            break;
+                        case PropertyKeyStrings.VERTICAL_ACCELERATION_MULTIPLIER:
+                            verticalAccelerationMultiplier = tempMouseAction.verticalAccelerationMultiplier;
+                            break;
+                        case PropertyKeyStrings.VERTICAL_ACCELERATION_SCALE_MODE:
+                            verticalAccelerationScaleMode = tempMouseAction.verticalAccelerationScaleMode;
                             break;
                         default:
                             break;
@@ -508,18 +723,55 @@ namespace DS4MapperTest.StickActions
                 case PropertyKeyStrings.MAX_ZONE:
                     deadMod.MaxZone = tempMouseAction.deadMod.MaxZone;
                     break;
-                case PropertyKeyStrings.OUTPUT_CURVE:
-                    outputCurve = tempMouseAction.outputCurve;
+                case PropertyKeyStrings.DIR_UP:
+                    CopyDirButton((int)DirSlot.Up, tempMouseAction);
                     break;
-                case PropertyKeyStrings.MOUSE_SPEED:
-                    mouseSpeed = tempMouseAction.mouseSpeed;
+                case PropertyKeyStrings.DIR_DOWN:
+                    CopyDirButton((int)DirSlot.Down, tempMouseAction);
+                    break;
+                case PropertyKeyStrings.DIR_LEFT:
+                    CopyDirButton((int)DirSlot.Left, tempMouseAction);
+                    break;
+                case PropertyKeyStrings.DIR_RIGHT:
+                    CopyDirButton((int)DirSlot.Right, tempMouseAction);
+                    break;
+                case PropertyKeyStrings.DIAGONAL_RANGE:
+                    diagonalRange = tempMouseAction.diagonalRange;
+                    break;
+                case PropertyKeyStrings.OUTPUT_CURVE:
+                    motion.OutputCurve = tempMouseAction.motion.OutputCurve;
+                    break;
+                case PropertyKeyStrings.DEGREES_PER_SECOND:
+                    degreesPerSecond = tempMouseAction.degreesPerSecond;
                     break;
                 case PropertyKeyStrings.DELTA_SETTINGS:
-                    mouseDeltaSettings = new DeltaAccelSettings(tempMouseAction.mouseDeltaSettings);
+                    motion.DeltaSettings = new MouseMotionSettings.DeltaAccelSettings(tempMouseAction.motion.DeltaSettings);
+                    break;
+                case PropertyKeyStrings.VERTICAL_SCALE:
+                    motion.VerticalScale = tempMouseAction.motion.VerticalScale;
+                    break;
+                case PropertyKeyStrings.MULTIPLIER_COMPENSATION:
+                    multiplierCompensation = tempMouseAction.multiplierCompensation;
+                    break;
+                case PropertyKeyStrings.ACCELERATION_MULTIPLIER:
+                    accelerationMultiplier = tempMouseAction.accelerationMultiplier;
+                    break;
+                case PropertyKeyStrings.VERTICAL_ACCELERATION_MULTIPLIER:
+                    verticalAccelerationMultiplier = tempMouseAction.verticalAccelerationMultiplier;
+                    break;
+                case PropertyKeyStrings.VERTICAL_ACCELERATION_SCALE_MODE:
+                    verticalAccelerationScaleMode = tempMouseAction.verticalAccelerationScaleMode;
                     break;
                 default:
                     break;
             }
+        }
+
+        private void CopyDirButton(int slot, StickMouse sourceAction)
+        {
+            AxisDirButton sourceBtn = sourceAction.dirButtons[slot];
+            dirButtons[slot] = sourceBtn != null ?
+                (AxisDirButton)sourceBtn.DuplicateAction() : null;
         }
     }
 }

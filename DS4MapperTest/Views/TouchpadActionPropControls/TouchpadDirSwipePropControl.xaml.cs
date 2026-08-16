@@ -21,7 +21,7 @@ namespace DS4MapperTest.Views.TouchpadActionPropControls
     /// <summary>
     /// Interaction logic for TouchpadDirSwipePropControl.xaml
     /// </summary>
-    public partial class TouchpadDirSwipePropControl : UserControl
+    public partial class TouchpadDirSwipePropControl : UserControl, ISectionAwareTouchpadPropControl
     {
         private TouchpadDirSwipePropViewModel touchDirSwipeVM;
         public TouchpadDirSwipePropViewModel TouchDirSwipeVM => touchDirSwipeVM;
@@ -44,6 +44,16 @@ namespace DS4MapperTest.Views.TouchpadActionPropControls
             // Force re-eval of bindings
             DataContext = null;
             DataContext = touchDirSwipeVM;
+        }
+
+        public void ApplySection(TouchpadSettingsSection section)
+        {
+            ExtraFieldsPanel.Visibility = TouchpadUiFeatureFlags.ShowActionNameField && section == TouchpadSettingsSection.Extra
+                ? Visibility.Visible : Visibility.Collapsed;
+            ZonesFieldsPanel.Visibility = section == TouchpadSettingsSection.Gestures
+                ? Visibility.Visible : Visibility.Collapsed;
+            FilteringFieldsPanel.Visibility = section == TouchpadSettingsSection.FilteringStabilisation
+                ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void BtnUpEdit_Click(object sender, RoutedEventArgs e)

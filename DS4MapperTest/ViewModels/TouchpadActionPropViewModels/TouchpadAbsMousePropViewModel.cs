@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using DS4MapperTest.ActionUtil;
 using DS4MapperTest.ViewModels.Common;
 using DS4MapperTest.MapperUtil;
 using DS4MapperTest.ButtonActions;
@@ -69,12 +72,12 @@ namespace DS4MapperTest.ViewModels.TouchpadActionPropViewModels
 
         public string AntiRelease
         {
-            get => action.AntiRadius.ToString("N2");
+            get => action.AntiRelease.ToString("N2");
             set
             {
                 if (double.TryParse(value, out double temp))
                 {
-                    action.AntiRadius = Math.Clamp(temp, 0.0, 1.0);
+                    action.AntiRelease = Math.Clamp(temp, 0.0, 1.0);
                     AntiReleaseChanged?.Invoke(this, EventArgs.Empty);
                     ActionPropertyChanged?.Invoke(this, EventArgs.Empty);
                 }
@@ -170,6 +173,8 @@ namespace DS4MapperTest.ViewModels.TouchpadActionPropViewModels
             }
         }
 
+        public TouchpadAbsRingBindItem RingBindItem { get; private set; }
+
         public bool HighlightName
         {
             get => action.ParentAction == null ||
@@ -194,7 +199,7 @@ namespace DS4MapperTest.ViewModels.TouchpadActionPropViewModels
         public bool HighlightAntiRelease
         {
             get => action.ParentAction == null ||
-                action.ChangedProperties.Contains(TouchpadAbsAction.PropertyKeyStrings.ANTI_RADIUS);
+                action.ChangedProperties.Contains(TouchpadAbsAction.PropertyKeyStrings.ANTI_RELEASE);
         }
         public event EventHandler HighlightAntiReleaseChanged;
 
@@ -265,6 +270,7 @@ namespace DS4MapperTest.ViewModels.TouchpadActionPropViewModels
             }
 
             PrepareModel();
+            RingBindItem = new TouchpadAbsRingBindItem(this);
 
             NameChanged += TouchpadAbsMousePropViewModel_NameChanged;
             DeadZoneChanged += TouchpadAbsMousePropViewModel_DeadZoneChanged;
@@ -279,12 +285,12 @@ namespace DS4MapperTest.ViewModels.TouchpadActionPropViewModels
 
         private void TouchpadAbsMousePropViewModel_AntiReleaseChanged(object sender, EventArgs e)
         {
-            if (!action.ChangedProperties.Contains(TouchpadAbsAction.PropertyKeyStrings.ANTI_RADIUS))
+            if (!action.ChangedProperties.Contains(TouchpadAbsAction.PropertyKeyStrings.ANTI_RELEASE))
             {
-                action.ChangedProperties.Add(TouchpadAbsAction.PropertyKeyStrings.ANTI_RADIUS);
+                action.ChangedProperties.Add(TouchpadAbsAction.PropertyKeyStrings.ANTI_RELEASE);
             }
 
-            action.RaiseNotifyPropertyChange(mapper, TouchpadAbsAction.PropertyKeyStrings.ANTI_RADIUS);
+            action.RaiseNotifyPropertyChange(mapper, TouchpadAbsAction.PropertyKeyStrings.ANTI_RELEASE);
 
             HighlightAntiReleaseChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -432,6 +438,190 @@ namespace DS4MapperTest.ViewModels.TouchpadActionPropViewModels
                 action.ChangedProperties.Add(TouchpadAbsAction.PropertyKeyStrings.OUTER_RING_BUTTON);
                 action.UseParentRingButton = false;
             });
+        }
+
+        internal AxisDirButton EnsureEditableRingAction()
+        {
+            if (!usingRealAction)
+            {
+                ReplaceExistingLayerAction(this, EventArgs.Empty);
+            }
+
+            if (action.RingButton == null)
+            {
+                action.RingButton = new AxisDirButton(new OutputActionData(OutputActionData.ActionType.Empty, 0));
+            }
+
+            MarkRingChanged(action.RingButton);
+            return action.RingButton;
+        }
+
+        internal void MarkRingChanged(ButtonAction ringAction)
+        {
+            if (!action.ChangedProperties.Contains(TouchpadAbsAction.PropertyKeyStrings.OUTER_RING_BUTTON))
+            {
+                action.ChangedProperties.Add(TouchpadAbsAction.PropertyKeyStrings.OUTER_RING_BUTTON);
+            }
+
+            action.UseParentRingButton = false;
+            action.RaiseNotifyPropertyChange(mapper, TouchpadAbsAction.PropertyKeyStrings.OUTER_RING_BUTTON);
+            FaceButtonBindingItem.MarkFunctionsChanged(ringAction);
+        }
+
+        internal EditFaceBindingContext PrepareRingEdit()
+        {
+            AxisDirButton ringAction = EnsureEditableRingAction();
+            ActionFunc func = ringAction.ActionFuncs.OfType<NormalPressFunc>().FirstOrDefault();
+            if (func == null)
+            {
+                func = new NormalPressFunc(new OutputActionData(OutputActionData.ActionType.Empty, 0));
+                mapper.ProcessMappingChangeAction(() =>
+                {
+                    ringAction.Release(mapper, ignoreReleaseActions: true);
+                    ringAction.ActionFuncs.Insert(0, func);
+                    MarkRingChanged(ringAction);
+                });
+            }
+
+            return new EditFaceBindingContext(mapper, ringAction, func);
+        }
+    }
+
+    public class TouchpadAbsRingBindItem : INotifyPropertyChanged, IQuickBindTarget,
+        IActionOutputListOwner
+    {
+        private readonly TouchpadAbsMousePropViewModel owner;
+
+        public event PropertyChangedEventHandler PropertyChanged;
+        public ObservableCollection<ActionOutputItem> OutputItems { get; } =
+            new ObservableCollection<ActionOutputItem>();
+
+        public TouchpadAbsRingBindItem(TouchpadAbsMousePropViewModel owner)
+        {
+            this.owner = owner;
+            RefreshOutputItems();
+        }
+
+        public string DisplayBind
+        {
+            get
+            {
+                string result = owner.Action.RingButton?.DescribeActions(((IQuickBindTarget)this).Mapper);
+                return string.IsNullOrWhiteSpace(result) ? "Unbound" : result;
+            }
+        }
+
+        Mapper IQuickBindTarget.Mapper => owner.Mapper;
+        string IQuickBindTarget.RowLabel => "Outer Ring";
+        string IQuickBindTarget.SlotLabel => "Regular Press";
+        bool IQuickBindTarget.IsComplexBinding =>
+            !QuickBindActionApplier.IsSimpleFunc(
+                owner.Action.RingButton?.ActionFuncs.OfType<NormalPressFunc>().FirstOrDefault());
+
+        EditFaceBindingContext IQuickBindTarget.GetEditContext()
+        {
+            return owner.PrepareRingEdit();
+        }
+
+        void IQuickBindTarget.NotifyBindingChanged()
+        {
+            owner.MarkRingChanged(owner.Action.RingButton);
+            Refresh();
+        }
+
+        Mapper IActionOutputListOwner.Mapper => owner.Mapper;
+        string IActionOutputListOwner.RowLabel => "Outer Ring";
+        string IActionOutputListOwner.SlotLabel => "Regular Press";
+        ActionFunc IActionOutputListOwner.Func => CurrentFunc;
+        EditFaceBindingContext IActionOutputListOwner.PrepareEdit(ActionOutputItem item) => PrepareEdit(item);
+        void IActionOutputListOwner.AddOutputAction() => AddOutputAction();
+        void IActionOutputListOwner.RemoveOutputAction(ActionOutputItem item) => RemoveOutputAction(item);
+        void IActionOutputListOwner.NotifyBindingChanged()
+        {
+            owner.MarkRingChanged(owner.Action.RingButton);
+            Refresh();
+        }
+
+        private ActionFunc CurrentFunc =>
+            owner.Action.RingButton?.ActionFuncs.OfType<NormalPressFunc>().FirstOrDefault();
+
+        public EditFaceBindingContext PrepareEdit(ActionOutputItem item)
+        {
+            EditFaceBindingContext ctx = owner.PrepareRingEdit();
+            int index = item?.Index ?? 0;
+            EnsureOutputSlot(ctx, index);
+            return new EditFaceBindingContext(ctx.Mapper, ctx.Action, ctx.Func, index);
+        }
+
+        public void AddOutputAction()
+        {
+            EditFaceBindingContext ctx = owner.PrepareRingEdit();
+            owner.Mapper.ProcessMappingChangeAction(() =>
+            {
+                ctx.Action.Release(owner.Mapper, ignoreReleaseActions: true);
+                ctx.Func.OutputActions.Add(new OutputActionData(OutputActionData.ActionType.Empty, 0));
+                owner.MarkRingChanged(ctx.Action);
+            });
+
+            RefreshOutputItems();
+        }
+
+        public void RemoveOutputAction(ActionOutputItem item)
+        {
+            if (item == null || item.Index <= 0)
+            {
+                return;
+            }
+
+            EditFaceBindingContext ctx = owner.PrepareRingEdit();
+            if (item.Index >= ctx.Func.OutputActions.Count)
+            {
+                return;
+            }
+
+            owner.Mapper.ProcessMappingChangeAction(() =>
+            {
+                ctx.Action.Release(owner.Mapper, ignoreReleaseActions: true);
+                ctx.Func.OutputActions.RemoveAt(item.Index);
+                owner.MarkRingChanged(ctx.Action);
+            });
+
+            RefreshOutputItems();
+        }
+
+        private void EnsureOutputSlot(EditFaceBindingContext ctx, int index)
+        {
+            if (ctx.Func.OutputActions.Count > index)
+            {
+                return;
+            }
+
+            owner.Mapper.ProcessMappingChangeAction(() =>
+            {
+                ctx.Action.Release(owner.Mapper, ignoreReleaseActions: true);
+                while (ctx.Func.OutputActions.Count <= index)
+                {
+                    ctx.Func.OutputActions.Add(new OutputActionData(OutputActionData.ActionType.Empty, 0));
+                }
+
+                owner.MarkRingChanged(ctx.Action);
+            });
+        }
+
+        private void RefreshOutputItems()
+        {
+            OutputItems.Clear();
+            int count = Math.Max(1, CurrentFunc?.OutputActions.Count ?? 0);
+            for (int i = 0; i < count; i++)
+            {
+                OutputItems.Add(new ActionOutputItem(this, i));
+            }
+        }
+
+        public void Refresh()
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayBind)));
+            RefreshOutputItems();
         }
     }
 }

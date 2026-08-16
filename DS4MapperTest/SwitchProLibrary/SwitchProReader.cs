@@ -34,6 +34,9 @@ namespace DS4MapperTest.SwitchProLibrary
         public delegate void SwitchProReportDelegate(SwitchProReader sender,
             SwitchProDevice device);
         public event SwitchProReportDelegate Report;
+
+        public override GyroCalibrationStatus GyroCalibrationStatus => gyroCalibrationUtil.Status;
+        public override void RequestGyroCalibration() => gyroCalibrationUtil.RequestCalibrationAfterDelay(1000);
         public event EventHandler<SwitchProDevice> LeftStickCalibUpdated;
         public event EventHandler<SwitchProDevice> RightStickCalibUpdated;
 
@@ -44,6 +47,54 @@ namespace DS4MapperTest.SwitchProLibrary
             inputReportBuffer = new byte[device.InputReportLen];
             outputReportBuffer = new byte[device.OutputReportLen];
             rumbleReportBuffer = new byte[SwitchProDevice.RUMBLE_REPORT_LEN];
+        }
+
+        // Shift the calibration circle to the true rest position reported by the
+        // stick and reduce the range by the offset, rather than only pushing out
+        // the far side while leaving the assumed mid value untouched.
+        internal static bool AdjustStickAxisCalibration(ref SwitchProDevice.StickAxisData axisData, int axisValue)
+        {
+            bool calibUpdated = false;
+            if (axisValue > axisData.mid)
+            {
+                uint diff = (uint)(axisValue - axisData.mid);
+                axisData.mid = (ushort)axisValue;
+                axisData.min = (ushort)(axisData.min + diff + (diff / 2));
+                axisData.max = (ushort)(axisData.max + diff - (diff / 2));
+                calibUpdated = true;
+            }
+            else if (axisValue < axisData.mid)
+            {
+                uint diff = (uint)(axisData.mid - axisValue);
+                axisData.mid = (ushort)axisValue;
+                axisData.min = (ushort)(axisData.min - diff + (diff / 2));
+                axisData.max = (ushort)(axisData.max - diff - (diff / 2));
+                calibUpdated = true;
+            }
+
+            return calibUpdated;
+        }
+
+        // Sum every gyro sample present in a report (3 IMU frames per packet)
+        // rather than only the most recent one, so integrated motion output
+        // reflects the full report instead of discarding two-thirds of it.
+        internal static short CombineGyroAxisSamples(short[] gyroOut, int axisIdx,
+            short bias, short calibOffset, bool negate, int calibOffsetSign)
+        {
+            short combined = 0;
+            for (int sample = 0; sample < 3; sample++)
+            {
+                int rawSample = gyroOut[sample * 3 + axisIdx];
+                int value = rawSample - bias + calibOffsetSign * calibOffset;
+                if (negate)
+                {
+                    value = -value;
+                }
+
+                combined += (short)value;
+            }
+
+            return combined;
         }
 
         public void PrepareDevice()
@@ -58,7 +109,7 @@ namespace DS4MapperTest.SwitchProLibrary
         {
             PrepareDevice();
 
-            inputThread = new Thread(ReadInput);
+            inputThread = new Thread(() => RunReadInputSafely(ReadInput));
             inputThread.IsBackground = true;
             inputThread.Priority = ThreadPriority.AboveNormal;
             inputThread.Name = "Switch Pro Reader Thread";
@@ -223,47 +274,8 @@ namespace DS4MapperTest.SwitchProLibrary
                         if (firstReport && !device.foundLeftStickCalib)
                         {
                             bool calibUpdated = false;
-                            if (tempAxisX > device.leftStickXData.mid)
-                            {
-                                uint diff = (uint)(tempAxisX - device.leftStickXData.mid);
-                                //device.leftStickXData.min = (ushort)(device.leftStickXData.min + diff);
-
-                                device.leftStickXData.mid = (ushort)(tempAxisX);
-                                device.leftStickXData.min = (ushort)(device.leftStickXData.min + diff + (diff / 2));
-                                device.leftStickXData.max = (ushort)(device.leftStickXData.max + diff - (diff / 2));
-                                calibUpdated = true;
-                            }
-                            else if (tempAxisX < device.leftStickXData.mid)
-                            {
-                                uint diff = (uint)(device.leftStickXData.mid - tempAxisX);
-                                //device.leftStickXData.max = (ushort)(device.leftStickXData.max - diff);
-
-                                device.leftStickXData.mid = (ushort)(tempAxisX);
-                                device.leftStickXData.min = (ushort)(device.leftStickXData.min - diff + (diff / 2));
-                                device.leftStickXData.max = (ushort)(device.leftStickXData.max - diff - (diff / 2));
-                                calibUpdated = true;
-                            }
-
-                            if (tempAxisY > device.leftStickYData.mid)
-                            {
-                                uint diff = (uint)(tempAxisY - device.leftStickYData.mid);
-                                //device.leftStickYData.min = (ushort)(device.leftStickYData.min + diff);
-
-                                device.leftStickYData.mid = (ushort)tempAxisY;
-                                device.leftStickYData.min = (ushort)(device.leftStickYData.min + diff + (diff / 2));
-                                device.leftStickYData.max = (ushort)(device.leftStickYData.max + diff - (diff / 2));
-                                calibUpdated = true;
-                            }
-                            else if (tempAxisY < device.leftStickYData.mid)
-                            {
-                                uint diff = (uint)(device.leftStickYData.mid - tempAxisY);
-                                //device.leftStickYData.max = (ushort)(device.leftStickYData.max - diff);
-
-                                device.leftStickYData.mid = (ushort)tempAxisY;
-                                device.leftStickYData.min = (ushort)(device.leftStickYData.min - diff + (diff / 2));
-                                device.leftStickYData.max = (ushort)(device.leftStickYData.max - diff - (diff / 2));
-                                calibUpdated = true;
-                            }
+                            calibUpdated |= AdjustStickAxisCalibration(ref device.leftStickXData, tempAxisX);
+                            calibUpdated |= AdjustStickAxisCalibration(ref device.leftStickYData, tempAxisY);
 
                             if (calibUpdated)
                             {
@@ -301,47 +313,8 @@ namespace DS4MapperTest.SwitchProLibrary
                         if (firstReport && !device.foundRightStickCalib)
                         {
                             bool calibUpdated = false;
-                            if (tempAxisX > device.rightStickXData.mid)
-                            {
-                                uint diff = (uint)(tempAxisX - device.rightStickXData.mid);
-                                //device.rightStickXData.min = (ushort)(device.rightStickXData.min + diff);
-
-                                device.rightStickXData.mid = (ushort)tempAxisX;
-                                device.rightStickXData.min = (ushort)(device.rightStickXData.min + diff + (diff / 2));
-                                device.rightStickXData.max = (ushort)(device.rightStickXData.max + diff - (diff / 2));
-                                calibUpdated = true;
-                            }
-                            else if (tempAxisX < device.rightStickXData.mid)
-                            {
-                                uint diff = (uint)(device.rightStickXData.mid - tempAxisX);
-                                //device.rightStickXData.max = (ushort)(device.rightStickXData.max - diff);
-
-                                device.rightStickXData.mid = (ushort)tempAxisX;
-                                device.rightStickXData.min = (ushort)(device.rightStickXData.min - diff + (diff / 2));
-                                device.rightStickXData.max = (ushort)(device.rightStickXData.max - diff - (diff / 2));
-                                calibUpdated = true;
-                            }
-
-                            if (tempAxisY > device.rightStickYData.mid)
-                            {
-                                uint diff = (uint)(tempAxisY - device.rightStickYData.mid);
-                                //device.rightStickYData.min = (ushort)(device.rightStickYData.min + diff);
-
-                                device.rightStickYData.mid = (ushort)tempAxisY;
-                                device.rightStickYData.min = (ushort)(device.rightStickYData.min + diff + (diff / 2));
-                                device.rightStickYData.max = (ushort)(device.rightStickYData.max + diff - (diff / 2));
-                                calibUpdated = true;
-                            }
-                            else if (tempAxisY < device.rightStickYData.mid)
-                            {
-                                uint diff = (uint)(device.rightStickYData.mid - tempAxisY);
-                                //device.rightStickYData.max = (ushort)(device.rightStickYData.max - diff);
-
-                                device.rightStickYData.mid = (ushort)tempAxisY;
-                                device.rightStickYData.min = (ushort)(device.rightStickYData.min - diff + (diff / 2));
-                                device.rightStickYData.max = (ushort)(device.rightStickYData.max - diff - (diff / 2));
-                                calibUpdated = true;
-                            }
+                            calibUpdated |= AdjustStickAxisCalibration(ref device.rightStickXData, tempAxisX);
+                            calibUpdated |= AdjustStickAxisCalibration(ref device.rightStickYData, tempAxisY);
 
                             if (calibUpdated)
                             {
@@ -401,26 +374,21 @@ namespace DS4MapperTest.SwitchProLibrary
                         short accelZ = accel_raw[IMU_ZAXIS_IDX];
 
                         // Combine all gyro samples for use in DPS conversion
-                        short gyroYaw = (short)(-1 * (gyro_out[0 + IMU_YAW_IDX] - device.gyroBias[IMU_YAW_IDX] + device.gyroCalibOffsets[IMU_YAW_IDX]));
-                        gyroYaw += (short)(-1 * (gyro_out[3 + IMU_YAW_IDX] - device.gyroBias[IMU_YAW_IDX] + device.gyroCalibOffsets[IMU_YAW_IDX]));
-                        gyroYaw += (short)(-1 * (gyro_out[6 + IMU_YAW_IDX] - device.gyroBias[IMU_YAW_IDX] + device.gyroCalibOffsets[IMU_YAW_IDX]));
-
-                        short gyroPitch = (short)(gyro_out[0 + IMU_PITCH_IDX] - device.gyroBias[IMU_PITCH_IDX] - device.gyroCalibOffsets[IMU_PITCH_IDX]);
-                        gyroPitch += (short)(gyro_out[3 + IMU_PITCH_IDX] - device.gyroBias[IMU_PITCH_IDX] - device.gyroCalibOffsets[IMU_PITCH_IDX]);
-                        gyroPitch += (short)(gyro_out[6 + IMU_PITCH_IDX] - device.gyroBias[IMU_PITCH_IDX] - device.gyroCalibOffsets[IMU_PITCH_IDX]);
-
-                        short gyroRoll = (short)(gyro_out[0 + IMU_ROLL_IDX] - device.gyroBias[IMU_ROLL_IDX] - device.gyroCalibOffsets[IMU_ROLL_IDX]);
-                        gyroRoll += (short)(gyro_out[3 + IMU_ROLL_IDX] - device.gyroBias[IMU_ROLL_IDX] - device.gyroCalibOffsets[IMU_ROLL_IDX]);
-                        gyroRoll += (short)(gyro_out[6 + IMU_ROLL_IDX] - device.gyroBias[IMU_ROLL_IDX] - device.gyroCalibOffsets[IMU_ROLL_IDX]);
+                        short gyroYaw = CombineGyroAxisSamples(gyro_out, IMU_YAW_IDX,
+                            device.gyroBias[IMU_YAW_IDX], device.gyroCalibOffsets[IMU_YAW_IDX],
+                            negate: true, calibOffsetSign: 1);
+                        short gyroPitch = CombineGyroAxisSamples(gyro_out, IMU_PITCH_IDX,
+                            device.gyroBias[IMU_PITCH_IDX], device.gyroCalibOffsets[IMU_PITCH_IDX],
+                            negate: false, calibOffsetSign: -1);
+                        short gyroRoll = CombineGyroAxisSamples(gyro_out, IMU_ROLL_IDX,
+                            device.gyroBias[IMU_ROLL_IDX], device.gyroCalibOffsets[IMU_ROLL_IDX],
+                            negate: false, calibOffsetSign: -1);
 
 
-                        if (gyroCalibrationUtil.gyroAverageTimer.IsRunning)
-                        {
-                            int currentYaw = gyroYaw, currentPitch = gyroPitch, currentRoll = gyroRoll;
-                            int AccelX = accelX, AccelY = accelY, AccelZ = accelZ;
-                            gyroCalibrationUtil.CalcSensorCamples(ref currentYaw, ref currentPitch, ref currentRoll,
-                                ref AccelX, ref AccelY, ref AccelZ);
-                        }
+                        int currentYaw = gyroYaw, currentPitch = gyroPitch, currentRoll = gyroRoll;
+                        int AccelX = accelX, AccelY = accelY, AccelZ = accelZ;
+                        gyroCalibrationUtil.Update(ref currentYaw, ref currentPitch, ref currentRoll,
+                            ref AccelX, ref AccelY, ref AccelZ);
 
                         gyroYaw -= (short)gyroCalibrationUtil.gyro_offset_x;
                         gyroPitch -= (short)gyroCalibrationUtil.gyro_offset_y;

@@ -20,7 +20,7 @@ namespace DS4MapperTest.Views.TouchpadActionPropControls
     /// <summary>
     /// Interaction logic for TouchpadFlickStickPropControl.xaml
     /// </summary>
-    public partial class TouchpadFlickStickPropControl : UserControl
+    public partial class TouchpadFlickStickPropControl : UserControl, ISectionAwareTouchpadPropControl
     {
         private TouchpadFlickStickPropViewModel touchFlickPropVM;
         public TouchpadFlickStickPropViewModel TouchFlickPropVM => touchFlickPropVM;
@@ -35,6 +35,16 @@ namespace DS4MapperTest.Views.TouchpadActionPropControls
             touchFlickPropVM = new TouchpadFlickStickPropViewModel(mapper, action);
 
             DataContext = touchFlickPropVM;
+        }
+
+        public void ApplySection(TouchpadSettingsSection section)
+        {
+            ExtraFieldsPanel.Visibility = TouchpadUiFeatureFlags.ShowActionNameField && section == TouchpadSettingsSection.Extra
+                ? Visibility.Visible : Visibility.Collapsed;
+            MovementFieldsPanel.Visibility = section == TouchpadSettingsSection.MouseMovement
+                ? Visibility.Visible : Visibility.Collapsed;
+            SensitivityFieldsPanel.Visibility = section == TouchpadSettingsSection.SensitivityCalibration
+                ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 }

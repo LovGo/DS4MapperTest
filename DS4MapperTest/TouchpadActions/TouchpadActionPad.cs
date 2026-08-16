@@ -41,6 +41,21 @@ namespace DS4MapperTest.TouchpadActions
             public const string OUTER_RING_DEAD_ZONE = "OuterRingDeadZone";
             public const string USE_AS_OUTER_RING = "UseAsOuterRing";
             public const string OUTER_RING_FULL_RANGE = "OuterRingFullRange";
+
+            public const string COUNTER_MOVEMENT_ENABLED = "CounterMovementReleasePressEnabled";
+            public const string COUNTER_MOVEMENT_TAP_LENGTH_PRESET = "CounterMovementTapLengthPreset";
+            public const string COUNTER_MOVEMENT_TAP_LENGTH_MODE = "OppositeTapLengthMode";
+            public const string COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS = "OppositeTapLengthMs";
+            public const string COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT = "OppositeTapLengthVariancePercent";
+            public const string COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS = "OppositeTapLengthMinimumMs";
+            public const string COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS = "OppositeTapLengthMaximumMs";
+            public const string COUNTER_MOVEMENT_START_DELAY_MODE = "OppositeTapStartDelayMode";
+            public const string COUNTER_MOVEMENT_START_DELAY_FIXED_MS = "OppositeTapStartDelayMs";
+            public const string COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT = "OppositeTapStartDelayVariancePercent";
+            public const string COUNTER_MOVEMENT_START_DELAY_MIN_MS = "OppositeTapStartDelayMinimumMs";
+            public const string COUNTER_MOVEMENT_START_DELAY_MAX_MS = "OppositeTapStartDelayMaximumMs";
+            public const string COUNTER_MOVEMENT_DEADZONE_RELEASE_ENABLED = "CounterMovementDeadZoneReleaseEnabled";
+            public const string COUNTER_MOVEMENT_MIN_HOLD_MS = "CounterMovementMinimumHoldMs";
         }
 
         private HashSet<string> fullPropertySet = new HashSet<string>()
@@ -68,6 +83,20 @@ namespace DS4MapperTest.TouchpadActions
             PropertyKeyStrings.REQUIRES_CLICK,
             PropertyKeyStrings.DELAY_ENABLED,
             PropertyKeyStrings.DELAY_TIME,
+            PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED,
+            PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET,
+            PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE,
+            PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS,
+            PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT,
+            PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS,
+            PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS,
+            PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE,
+            PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS,
+            PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT,
+            PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS,
+            PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS,
+            PropertyKeyStrings.COUNTER_MOVEMENT_DEADZONE_RELEASE_ENABLED,
+            PropertyKeyStrings.COUNTER_MOVEMENT_MIN_HOLD_MS,
         };
 
         public enum DPadMode : uint
@@ -201,6 +230,9 @@ namespace DS4MapperTest.TouchpadActions
 
         private Stopwatch delayStopWatch = new Stopwatch();
 
+        private TouchpadCounterMovementReleasePress counterMovementReleasePress = new TouchpadCounterMovementReleasePress();
+        public TouchpadCounterMovementReleasePress CounterMovementReleasePress => counterMovementReleasePress;
+
         public TouchpadActionPad()
         {
             actionTypeName = ACTION_TYPE_NAME;
@@ -295,6 +327,8 @@ namespace DS4MapperTest.TouchpadActions
                 }
             }
 
+            currentDir = counterMovementReleasePress.Prepare(touchFrame, currentDir);
+
             active = true;
             activeEvent = true;
             inputStatus = currentDir != DpadDirections.Centered;
@@ -304,6 +338,8 @@ namespace DS4MapperTest.TouchpadActions
 
         public override void Event(Mapper mapper)
         {
+            counterMovementReleasePress.FlushPendingReleases(mapper, usedFuncList);
+
             int previousDirNum = (int)previousDir;
             //Console.WriteLine("DIRS: Previous: {0} Current: {1}", previousDir, currentDir);
 
@@ -848,11 +884,15 @@ namespace DS4MapperTest.TouchpadActions
 
             prevXNorm = xNorm; prevYNorm = yNorm;
             previousDir = currentDir;
+
+            counterMovementReleasePress.EmitPulse(mapper, usedFuncList);
+
             //bool ringBtnActive = usedRingButton != null && usedRingButton.active;
             //active = currentDir != DpadDirections.Centered || ringBtnActive ||
             //    tmpActiveBtns.Count > 0;
             active = currentDir != DpadDirections.Centered ||
-                tmpActiveBtns.Count > 0;
+                tmpActiveBtns.Count > 0 ||
+                counterMovementReleasePress.HasActivePulse;
             activeEvent = false;
         }
 
@@ -879,6 +919,8 @@ namespace DS4MapperTest.TouchpadActions
                 currentDir = DpadDirections.Centered;
                 previousDir = currentDir;
             }
+
+            counterMovementReleasePress.Cleanup(mapper, usedFuncList);
 
             inputStatus = false;
             if (delayStopWatch.IsRunning)
@@ -933,6 +975,8 @@ namespace DS4MapperTest.TouchpadActions
                 currentDir = DpadDirections.Centered;
                 previousDir = currentDir;
             }
+
+            counterMovementReleasePress.Cleanup(mapper, usedFuncList);
 
             if (!useParentDelay && delayStopWatch.IsRunning)
             {
@@ -1130,7 +1174,8 @@ namespace DS4MapperTest.TouchpadActions
                         case PropertyKeyStrings.PAD_DIR_UP:
                             {
                                 int tempDir = (int)DpadDirections.Up;
-                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                                    (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1138,7 +1183,8 @@ namespace DS4MapperTest.TouchpadActions
                         case PropertyKeyStrings.PAD_DIR_DOWN:
                             {
                                 int tempDir = (int)DpadDirections.Down;
-                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                                    (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1146,7 +1192,8 @@ namespace DS4MapperTest.TouchpadActions
                         case PropertyKeyStrings.PAD_DIR_LEFT:
                             {
                                 int tempDir = (int)DpadDirections.Left;
-                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                                    (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1154,7 +1201,8 @@ namespace DS4MapperTest.TouchpadActions
                         case PropertyKeyStrings.PAD_DIR_RIGHT:
                             {
                                 int tempDir = (int)DpadDirections.Right;
-                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                                    (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1162,7 +1210,8 @@ namespace DS4MapperTest.TouchpadActions
                         case PropertyKeyStrings.PAD_DIR_UPLEFT:
                             {
                                 int tempDir = (int)DpadDirections.UpLeft;
-                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                                    (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1170,7 +1219,8 @@ namespace DS4MapperTest.TouchpadActions
                         case PropertyKeyStrings.PAD_DIR_UPRIGHT:
                             {
                                 int tempDir = (int)DpadDirections.UpRight;
-                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                                    (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1178,7 +1228,8 @@ namespace DS4MapperTest.TouchpadActions
                         case PropertyKeyStrings.PAD_DIR_DOWNLEFT:
                             {
                                 int tempDir = (int)DpadDirections.DownLeft;
-                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                                    (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1186,13 +1237,15 @@ namespace DS4MapperTest.TouchpadActions
                         case PropertyKeyStrings.PAD_DIR_DOWNRIGHT:
                             {
                                 int tempDir = (int)DpadDirections.DownRight;
-                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                                usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                                    (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
                             break;
                         case PropertyKeyStrings.OUTER_RING_BUTTON:
-                            ringButton = tempPadAction.ringButton;
+                            ringButton = tempPadAction.ringButton != null ?
+                                (AxisDirButton)tempPadAction.ringButton.DuplicateAction() : null;
                             useParentRingButton = true;
                             break;
                         case PropertyKeyStrings.USE_OUTER_RING:
@@ -1221,6 +1274,48 @@ namespace DS4MapperTest.TouchpadActions
                                 delayStopWatch = tempPadAction.delayStopWatch;
                             }
 
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED:
+                            counterMovementReleasePress.Enabled = tempPadAction.counterMovementReleasePress.Enabled;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET:
+                            counterMovementReleasePress.TapLengthPreset = tempPadAction.counterMovementReleasePress.TapLengthPreset;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE:
+                            counterMovementReleasePress.OppositeTapLengthMode = tempPadAction.counterMovementReleasePress.OppositeTapLengthMode;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS:
+                            counterMovementReleasePress.OppositeTapLengthMs = tempPadAction.counterMovementReleasePress.OppositeTapLengthMs;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT:
+                            counterMovementReleasePress.OppositeTapLengthVariancePercent = tempPadAction.counterMovementReleasePress.OppositeTapLengthVariancePercent;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS:
+                            counterMovementReleasePress.OppositeTapLengthMinimumMs = tempPadAction.counterMovementReleasePress.OppositeTapLengthMinimumMs;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS:
+                            counterMovementReleasePress.OppositeTapLengthMaximumMs = tempPadAction.counterMovementReleasePress.OppositeTapLengthMaximumMs;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE:
+                            counterMovementReleasePress.OppositeTapStartDelayMode = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMode;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS:
+                            counterMovementReleasePress.OppositeTapStartDelayMs = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMs;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT:
+                            counterMovementReleasePress.OppositeTapStartDelayVariancePercent = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayVariancePercent;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS:
+                            counterMovementReleasePress.OppositeTapStartDelayMinimumMs = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMinimumMs;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS:
+                            counterMovementReleasePress.OppositeTapStartDelayMaximumMs = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMaximumMs;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_DEADZONE_RELEASE_ENABLED:
+                            counterMovementReleasePress.TriggerOnDeadZoneReleaseEnabled = tempPadAction.counterMovementReleasePress.TriggerOnDeadZoneReleaseEnabled;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_MIN_HOLD_MS:
+                            counterMovementReleasePress.MinimumHoldMs = tempPadAction.counterMovementReleasePress.MinimumHoldMs;
                             break;
                         default:
                             break;
@@ -1275,7 +1370,8 @@ namespace DS4MapperTest.TouchpadActions
                 case PropertyKeyStrings.PAD_DIR_UP:
                     {
                         int tempDir = (int)DpadDirections.Up;
-                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                            (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1283,7 +1379,8 @@ namespace DS4MapperTest.TouchpadActions
                 case PropertyKeyStrings.PAD_DIR_DOWN:
                     {
                         int tempDir = (int)DpadDirections.Down;
-                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                            (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1291,7 +1388,8 @@ namespace DS4MapperTest.TouchpadActions
                 case PropertyKeyStrings.PAD_DIR_LEFT:
                     {
                         int tempDir = (int)DpadDirections.Left;
-                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                            (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1299,7 +1397,8 @@ namespace DS4MapperTest.TouchpadActions
                 case PropertyKeyStrings.PAD_DIR_RIGHT:
                     {
                         int tempDir = (int)DpadDirections.Right;
-                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                            (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1307,7 +1406,8 @@ namespace DS4MapperTest.TouchpadActions
                 case PropertyKeyStrings.PAD_DIR_UPLEFT:
                     {
                         int tempDir = (int)DpadDirections.UpLeft;
-                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                            (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1315,7 +1415,8 @@ namespace DS4MapperTest.TouchpadActions
                 case PropertyKeyStrings.PAD_DIR_UPRIGHT:
                     {
                         int tempDir = (int)DpadDirections.UpRight;
-                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                            (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1323,7 +1424,8 @@ namespace DS4MapperTest.TouchpadActions
                 case PropertyKeyStrings.PAD_DIR_DOWNLEFT:
                     {
                         int tempDir = (int)DpadDirections.DownLeft;
-                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                            (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1331,13 +1433,15 @@ namespace DS4MapperTest.TouchpadActions
                 case PropertyKeyStrings.PAD_DIR_DOWNRIGHT:
                     {
                         int tempDir = (int)DpadDirections.DownRight;
-                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir];
+                        usedEventButtonsList[tempDir] = tempPadAction.usedEventButtonsList[tempDir] != null ?
+                            (ButtonAction)tempPadAction.usedEventButtonsList[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
                     break;
                 case PropertyKeyStrings.OUTER_RING_BUTTON:
-                    ringButton = tempPadAction.ringButton;
+                    ringButton = tempPadAction.ringButton != null ?
+                        (AxisDirButton)tempPadAction.ringButton.DuplicateAction() : null;
                     useParentRingButton = true;
                     break;
                 case PropertyKeyStrings.USE_OUTER_RING:
@@ -1366,6 +1470,39 @@ namespace DS4MapperTest.TouchpadActions
                         delayStopWatch = tempPadAction.delayStopWatch;
                     }
 
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED:
+                    counterMovementReleasePress.Enabled = tempPadAction.counterMovementReleasePress.Enabled;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET:
+                    counterMovementReleasePress.TapLengthPreset = tempPadAction.counterMovementReleasePress.TapLengthPreset;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS:
+                    counterMovementReleasePress.OppositeTapLengthMinimumMs = tempPadAction.counterMovementReleasePress.OppositeTapLengthMinimumMs;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS:
+                    counterMovementReleasePress.OppositeTapLengthMaximumMs = tempPadAction.counterMovementReleasePress.OppositeTapLengthMaximumMs;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE:
+                    counterMovementReleasePress.OppositeTapStartDelayMode = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMode;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS:
+                    counterMovementReleasePress.OppositeTapStartDelayMs = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMs;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT:
+                    counterMovementReleasePress.OppositeTapStartDelayVariancePercent = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayVariancePercent;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS:
+                    counterMovementReleasePress.OppositeTapStartDelayMinimumMs = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMinimumMs;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS:
+                    counterMovementReleasePress.OppositeTapStartDelayMaximumMs = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMaximumMs;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_DEADZONE_RELEASE_ENABLED:
+                    counterMovementReleasePress.TriggerOnDeadZoneReleaseEnabled = tempPadAction.counterMovementReleasePress.TriggerOnDeadZoneReleaseEnabled;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_MIN_HOLD_MS:
+                    counterMovementReleasePress.MinimumHoldMs = tempPadAction.counterMovementReleasePress.MinimumHoldMs;
                     break;
                 default:
                     break;

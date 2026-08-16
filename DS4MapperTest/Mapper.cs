@@ -6,6 +6,7 @@ using DS4MapperTest.MapperUtil;
 using DS4MapperTest.StickActions;
 using DS4MapperTest.TouchpadActions;
 using DS4MapperTest.TriggerActions;
+using NLog;
 using Newtonsoft.Json;
 using Sensorit.Base;
 using System;
@@ -24,6 +25,44 @@ namespace DS4MapperTest
 {
     public abstract class Mapper
     {
+        internal readonly struct RouteMouseStateSnapshot
+        {
+            public RouteMouseStateSnapshot(double x, double y, bool sync, double xRemainder,
+                double yRemainder, int wheelX, int wheelY, bool wheelSync)
+            {
+                X = x;
+                Y = y;
+                Sync = sync;
+                XRemainder = xRemainder;
+                YRemainder = yRemainder;
+                WheelX = wheelX;
+                WheelY = wheelY;
+                WheelSync = wheelSync;
+            }
+
+            public double X { get; }
+            public double Y { get; }
+            public bool Sync { get; }
+            public double XRemainder { get; }
+            public double YRemainder { get; }
+            public int WheelX { get; }
+            public int WheelY { get; }
+            public bool WheelSync { get; }
+        }
+
+        private sealed class RelativeRouteMouseState
+        {
+            public double X;
+            public double Y;
+            public bool Sync;
+            public double XRemainder;
+            public double YRemainder;
+            public int WheelX;
+            public int WheelY;
+            public bool WheelSync;
+        }
+
+        private static readonly Logger logger = LogManager.GetCurrentClassLogger();
         protected const int X360_STICK_MAX = 32767;
         protected const int X360_STICK_MIN = -32768;
         protected const int OUTPUT_X360_RESOLUTION = X360_STICK_MAX - X360_STICK_MIN;
@@ -91,6 +130,12 @@ namespace DS4MapperTest
             get => mouseWheelSync; set => mouseWheelSync = value;
         }
 
+        private readonly Dictionary<MouseOutputRoute, RelativeRouteMouseState> routeMouseStates =
+            new Dictionary<MouseOutputRoute, RelativeRouteMouseState>();
+
+        protected MouseOutputDispatcher mouseOutputDispatcher;
+        protected MouseOutputProducerId mouseOutputProducerId;
+
         // Used to ensure output gamepad events are sent only as
         // needed when dealing with multiple input controllers (JoyCon)
         protected bool gamepadSync = true;
@@ -116,6 +161,18 @@ namespace DS4MapperTest
         {
             get => bindingList;
         }
+
+        private struct PendingFlick
+        {
+            public double totalCounts;
+            public double duration;
+            public double elapsed;
+            public double lastProgress;
+            // Sub-integer counts carried between ticks, managed entirely within the flick
+            // so accuracy never depends on mouseXRemainder (which is shared and can be reset)
+            public double subCountCarry;
+        }
+        private readonly List<PendingFlick> pendingFlicks = new List<PendingFlick>();
 
         protected Dictionary<string, InputBindingMeta> bindingDict = new Dictionary<string, InputBindingMeta>();
         public Dictionary<string, InputBindingMeta> BindingDict
@@ -165,11 +222,14 @@ namespace DS4MapperTest
         }
 
         public virtual InputDeviceType DeviceType => InputDeviceType.None;
+        public virtual double GetNormalisedTriggerPosition(
+            TriggerSensitivityModifierTrigger trigger) => 0.0;
         public abstract DeviceReaderBase BaseReader
         {
             get;
         }
         protected InputDeviceBase baseDevice;
+        public InputDeviceBase BaseDevice => baseDevice;
 
         protected bool quit = false;
         public bool Quit { get => quit; set => quit = value; }
@@ -237,6 +297,176 @@ namespace DS4MapperTest
         protected OutputContType outputControlType = OutputContType.None;
 
         protected Xbox360RumbleCallbackDelegate viiper360Feedback;
+        protected DSOutputCallbackDelegate viiperDSFeedback;
+        protected NS2ProOutputCallbackDelegate viiperNS2ProFeedback;
+        protected bool loggedFirstVirtualState;
+        private readonly object viiperDeviceLock = new object();
+
+        protected static bool IsPlausibleViiperDeviceHandle(nuint handle)
+        {
+            return handle != 0 && handle != nuint.MaxValue;
+        }
+
+        public static OutputContType ResolveOutputControllerType(OutputContType type)
+        {
+            return type == OutputContType.DualSense
+                ? OutputContType.DualSenseEdge
+                : type;
+        }
+
+        protected bool EnsureViiperOutputLocked()
+        {
+            OutputContType desiredType =
+                ResolveOutputControllerType(actionProfile.OutputGamepadSettings.OutputGamepad);
+            bool desiredEnabled = actionProfile.OutputGamepadSettings.Enabled &&
+                desiredType != OutputContType.None;
+
+            if (outputControlType != OutputContType.None)
+            {
+                bool handleValid = IsPlausibleViiperDeviceHandle(deviceHandle);
+                if (!desiredEnabled || desiredType != outputControlType || !handleValid)
+                {
+                    RemoveViiperDeviceLocked();
+                    Thread.Sleep(100);
+                }
+            }
+
+            if (desiredEnabled && outputControlType == OutputContType.None)
+            {
+                if (!LibVIIPER.CreateUSBBus(viiperServerHandle, ref viiperBusId))
+                {
+                    deviceHandle = 0;
+                    viiperBusId = 0;
+                    outputControlType = OutputContType.None;
+                    return false;
+                }
+
+                Thread.Sleep(200);
+
+                if (desiredType == OutputContType.Xbox360)
+                {
+                    if (!LibVIIPER.CreateXbox360Device(viiperServerHandle, out deviceHandle, viiperBusId, true, 0, 0, 0) ||
+                        !IsPlausibleViiperDeviceHandle(deviceHandle))
+                    {
+                        deviceHandle = 0;
+                        viiperBusId = 0;
+                        outputControlType = OutputContType.None;
+                        return false;
+                    }
+
+                    outputControlType = OutputContType.Xbox360;
+                    logger.Info($"Created VIIPER Xbox 360 device. Handle={deviceHandle} Bus={viiperBusId}");
+                }
+                else if (desiredType == OutputContType.DualShock4)
+                {
+                    if (!LibVIIPER.CreateDS4Device(viiperServerHandle, out deviceHandle, viiperBusId, true, 0, 0, IntPtr.Zero) ||
+                        !IsPlausibleViiperDeviceHandle(deviceHandle))
+                    {
+                        deviceHandle = 0;
+                        viiperBusId = 0;
+                        outputControlType = OutputContType.None;
+                        return false;
+                    }
+
+                    outputControlType = OutputContType.DualShock4;
+                    logger.Info($"Created VIIPER DS4 device. Handle={deviceHandle} Bus={viiperBusId}");
+                }
+                else if (desiredType == OutputContType.DualSenseEdge)
+                {
+                    if (!LibVIIPER.CreateDualSenseEdgeDevice(viiperServerHandle, out deviceHandle, viiperBusId, true, 0, 0, IntPtr.Zero) ||
+                        !IsPlausibleViiperDeviceHandle(deviceHandle))
+                    {
+                        Trace.WriteLine($"Fatal Error: Failed to create DualSense Edge virtual device. Handle={deviceHandle}");
+                        logger.Error($"Failed to create VIIPER DualSense Edge device. Handle={deviceHandle} Bus={viiperBusId}");
+                        deviceHandle = 0;
+                        viiperBusId = 0;
+                        outputControlType = OutputContType.None;
+                        return false;
+                    }
+
+                    outputControlType = OutputContType.DualSenseEdge;
+                    logger.Info($"Created VIIPER DualSense Edge device. Handle={deviceHandle} Bus={viiperBusId}");
+                }
+                else if (desiredType == OutputContType.SwitchPro2)
+                {
+                    if (!LibVIIPER.CreateNS2ProDevice(viiperServerHandle, out deviceHandle, viiperBusId, true, 0, 0, IntPtr.Zero) ||
+                        !IsPlausibleViiperDeviceHandle(deviceHandle))
+                    {
+                        logger.Error($"Failed to create VIIPER Switch 2 Pro device. Handle={deviceHandle} Bus={viiperBusId}");
+                        deviceHandle = 0;
+                        viiperBusId = 0;
+                        outputControlType = OutputContType.None;
+                        return false;
+                    }
+
+                    outputControlType = OutputContType.SwitchPro2;
+                    logger.Info($"Created VIIPER Switch 2 Pro device. Handle={deviceHandle} Bus={viiperBusId}");
+                }
+            }
+
+            return true;
+        }
+
+        protected void RefreshViiperOutput()
+        {
+            lock (viiperDeviceLock)
+            {
+                if (!EnsureViiperOutputLocked())
+                {
+                    return;
+                }
+            }
+
+            if (actionProfile.OutputGamepadSettings.ForceFeedbackEnabled &&
+                (outputControlType == OutputContType.Xbox360 ||
+                outputControlType == OutputContType.DualSense ||
+                outputControlType == OutputContType.DualSenseEdge ||
+                outputControlType == OutputContType.SwitchPro2))
+            {
+                Thread.Sleep(100);
+                EstablishForceFeedback();
+                HookFeedback();
+            }
+            else if (outputControlType == OutputContType.Xbox360 ||
+                outputControlType == OutputContType.DualSense ||
+                outputControlType == OutputContType.DualSenseEdge ||
+                outputControlType == OutputContType.SwitchPro2)
+            {
+                RemoveFeedback();
+            }
+        }
+
+        public void ApplyOutputSettings()
+        {
+            loggedFirstVirtualState = false;
+            RefreshViiperOutput();
+            PostProfileChange?.Invoke(this, EventArgs.Empty);
+        }
+
+        protected void RemoveViiperDeviceLocked()
+        {
+            if (outputControlType == OutputContType.Xbox360)
+            {
+                LibVIIPER.RemoveXbox360Device(deviceHandle);
+            }
+            else if (outputControlType == OutputContType.DualShock4)
+            {
+                LibVIIPER.RemoveDS4Device(deviceHandle);
+            }
+            else if (outputControlType == OutputContType.DualSense ||
+                outputControlType == OutputContType.DualSenseEdge)
+            {
+                LibVIIPER.RemoveDualSenseDevice(deviceHandle);
+            }
+            else if (outputControlType == OutputContType.SwitchPro2)
+            {
+                LibVIIPER.RemoveNS2ProDevice(deviceHandle);
+            }
+
+            deviceHandle = 0;
+            viiperBusId = 0;
+            outputControlType = OutputContType.None;
+        }
 
         // TODO: Move elsewhere
         public enum OutputContType : ushort
@@ -244,6 +474,9 @@ namespace DS4MapperTest
             None,
             Xbox360,
             DualShock4,
+            DualSense,
+            DualSenseEdge,
+            SwitchPro2,
         }
 
         // Keep reference to current editing action set from GUI
@@ -262,6 +495,33 @@ namespace DS4MapperTest
             get => editLayer; set => editLayer = value;
         }
 
+        private int suppressProfileDirtyTracking;
+        public event EventHandler ProfileEditCommitted;
+
+        public IDisposable SuppressProfileDirtyTracking()
+        {
+            suppressProfileDirtyTracking++;
+            return new ProfileDirtyTrackingScope(this);
+        }
+
+        private sealed class ProfileDirtyTrackingScope : IDisposable
+        {
+            private Mapper mapper;
+
+            public ProfileDirtyTrackingScope(Mapper mapper)
+            {
+                this.mapper = mapper;
+            }
+
+            public void Dispose()
+            {
+                if (mapper == null) return;
+                mapper.suppressProfileDirtyTracking =
+                    Math.Max(0, mapper.suppressProfileDirtyTracking - 1);
+                mapper = null;
+            }
+        }
+
         // VK, Count
         protected static Dictionary<uint, int> keyReferenceCountDict = new Dictionary<uint, int>();
         // VK
@@ -269,12 +529,21 @@ namespace DS4MapperTest
         // VK
         protected static HashSet<uint> releasedKeys = new HashSet<uint>();
 
+        // Mouse buttons need the same ownership model as keyboard keys. Without
+        // reference counts, two bindings sharing LeftButton can desync the OS state.
+        protected static Dictionary<int, int> mouseButtonReferenceCountDict = new Dictionary<int, int>();
         protected static HashSet<int> currentMouseButtons = new HashSet<int>();
-        protected static HashSet<int> activeMouseButtons = new HashSet<int>();
-        protected static HashSet<int> releasedMouseButtons = new HashSet<int>();
+        protected readonly HashSet<int> activeMouseButtons = new HashSet<int>();
+        protected readonly HashSet<int> releasedMouseButtons = new HashSet<int>();
+
+        // mouseButtonReferenceCountDict is shared across every Mapper instance
+        // (one per controller) *and*, since physical-mouse forwarding routes
+        // through AcquireSharedMouseButton/ReleaseSharedMouseButton below, the
+        // physical-mouse capture thread too. Guards read-modify-write access
+        // to it so a controller thread and the capture thread can't race.
+        private static readonly object mouseButtonRefLock = new object();
 
         protected bool hasInputEvts;
-        //protected object eventQueueLock = new object();
         protected ReaderWriterLockSlim eventQueueLocker = new ReaderWriterLockSlim();
         protected Queue<Action> eventQueue = new Queue<Action>();
 
@@ -315,15 +584,9 @@ namespace DS4MapperTest
                 tempMappings = profileSerializer.ActionMappings;
             }
 
-            //tempProfile.LeftTouchpadRotation = device.DeviceOptions.LeftTouchpadRotation;
-            //tempProfile.RightTouchpadRotation = device.DeviceOptions.RightTouchpadRotation;
-
             // Populate ActionLayer dicts with default no action elements
             foreach (ActionSet set in tempProfile.ActionSets)
             {
-                //ActionLayer layer = set.ActionLayers.First();
-                //if (layer != null)
-
                 int layerIndex = 0;
                 foreach (ActionLayer layer in set.ActionLayers)
                 {
@@ -371,7 +634,7 @@ namespace DS4MapperTest
                                     break;
                                 case InputBindingMeta.InputControlType.Touchpad:
                                     {
-                                        TouchpadNoAction touchNoAct = new TouchpadNoAction();
+                                        TouchpadPassthruAction touchNoAct = new TouchpadPassthruAction();
                                         touchNoAct.MappingId = tempMeta.Key;
                                         if (knownTouchpadDefinitions.TryGetValue(tempMeta.Key,
                                             out TouchpadDefinition tempDef))
@@ -384,7 +647,7 @@ namespace DS4MapperTest
                                     break;
                                 case InputBindingMeta.InputControlType.TouchpadRegion:
                                     {
-                                        TouchpadNoAction touchNoAct = new TouchpadNoAction();
+                                        TouchpadPassthruAction touchNoAct = new TouchpadPassthruAction();
                                         touchNoAct.MappingId = tempMeta.Key;
                                         if (knownTouchpadDefinitions.TryGetValue(tempMeta.Key,
                                             out TouchpadDefinition tempDef))
@@ -397,7 +660,7 @@ namespace DS4MapperTest
                                     break;
                                 case InputBindingMeta.InputControlType.Gyro:
                                     {
-                                        GyroNoMapAction gyroNoMapAct = new GyroNoMapAction();
+                                        GyroPassthruAction gyroNoMapAct = new GyroPassthruAction();
                                         gyroNoMapAct.MappingId = tempMeta.Key;
                                         if (knownGyroSensDefinitions.TryGetValue(tempMeta.Key,
                                             out GyroSensDefinition tempDef))
@@ -440,7 +703,6 @@ namespace DS4MapperTest
 
                     if (tempLayer != null)
                     {
-                        //ActionLayer parentLayer = (mapping.ActionLayer > 0 && mapping.ActionLayer < tempLayer.LayerActions.Count) ? tempLayer : null;
                         ActionLayer parentLayer = tempLayer != tempSet.DefaultActionLayer ? tempSet.DefaultActionLayer : null;
                         foreach (LayerMapping layerMapping in mapping.LayerMappings)
                         {
@@ -448,7 +710,6 @@ namespace DS4MapperTest
                                 tempLayer.LayerActions.Find((act) => act.Id == layerMapping.ActionIndex) : null;
                             if (tempAction != null)// layerMapping.ActionIndex < tempLayer.LayerActions.Count)
                             {
-                                //MapAction tempAction = tempLayer.LayerActions[layerMapping.ActionIndex];
                                 if (bindingDict.TryGetValue(layerMapping.InputBinding, out InputBindingMeta tempBind))
                                 {
                                     switch (tempBind.controlType)
@@ -456,31 +717,17 @@ namespace DS4MapperTest
                                         case InputBindingMeta.InputControlType.Button:
                                             if (tempAction is ButtonMapAction)
                                             {
-                                                //tempAction.DefaultUnbound = false;
+                                                // Unlike every other control type below, button
+                                                // actions deliberately do not soft-copy from the
+                                                // parent layer.
                                                 tempAction.MappingId = tempBind.id;
                                                 tempLayer.buttonActionDict[tempBind.id] = tempAction as ButtonMapAction;
-                                                if (parentLayer != null && parentLayer.buttonActionDict.TryGetValue(tempBind.id, out ButtonMapAction tempParentBtnAction) &&
-                                                    MapAction.IsSameType(tempAction, tempParentBtnAction))
-                                                {
-                                                    //(tempAction as ButtonMapAction).SoftCopyFromParent(tempParentBtnAction);
-                                                    //(tempAction as ButtonMapAction).CopyAction(tempParentBtnAction);
-                                                }
-
-                                                //if (parentLayer != null && parentLayer.LayerActions[layerMapping.ActionIndex] is ButtonMapAction)
-                                                //{
-                                                //    tempLayer.buttonActionDict[tempBind.id] = (tempAction as ButtonMapAction).DuplicateAction();
-                                                //}
-                                                //else
-                                                //{
-                                                //    tempLayer.buttonActionDict[tempBind.id] = tempAction as ButtonMapAction;
-                                                //}
                                             }
 
                                             break;
                                         case InputBindingMeta.InputControlType.DPad:
                                             if (tempAction is DPadMapAction)
                                             {
-                                                //tempAction.DefaultUnbound = false;
                                                 tempAction.MappingId = tempBind.id;
                                                 tempLayer.dpadActionDict[tempBind.id] = tempAction as DPadMapAction;
                                                 if (parentLayer != null && parentLayer.dpadActionDict.TryGetValue(tempBind.id, out DPadMapAction tempParentDpadAction) &&
@@ -501,7 +748,6 @@ namespace DS4MapperTest
                                                     tempStickAction.StickDefinition = tempDef;
                                                 }
 
-                                                //tempAction.DefaultUnbound = false;
                                                 tempAction.MappingId = tempBind.id;
                                                 tempLayer.stickActionDict[tempBind.id] = tempStickAction;
 
@@ -522,7 +768,6 @@ namespace DS4MapperTest
                                                     triggerAct.TriggerDef = tempDef;
                                                 }
 
-                                                //tempAction.DefaultUnbound = false;
                                                 tempAction.MappingId = tempBind.id;
                                                 tempLayer.triggerActionDict[tempBind.id] = tempAction as TriggerMapAction;
                                                 if (parentLayer != null && parentLayer.triggerActionDict.TryGetValue(tempBind.id, out TriggerMapAction tempParentTrigAction) &&
@@ -542,7 +787,6 @@ namespace DS4MapperTest
                                                     touchAct.TouchDefinition = tempDef;
                                                 }
 
-                                                //tempAction.DefaultUnbound = false;
                                                 tempAction.MappingId = tempBind.id;
                                                 tempLayer.touchpadActionDict[tempBind.id] = tempAction as TouchpadMapAction;
                                                 if (parentLayer != null && parentLayer.touchpadActionDict.TryGetValue(tempBind.id, out TouchpadMapAction tempParentTouchAction) &&
@@ -564,7 +808,6 @@ namespace DS4MapperTest
                                                     touchAct.TouchDefinition = tempDef;
                                                 }
 
-                                                //tempAction.DefaultUnbound = false;
                                                 tempAction.MappingId = tempBind.id;
                                                 tempLayer.touchpadActionDict[tempBind.id] = tempAction as TouchpadMapAction;
                                                 if (parentLayer != null && parentLayer.touchpadActionDict.TryGetValue(tempBind.id, out TouchpadMapAction tempParentTouchAction) &&
@@ -581,13 +824,11 @@ namespace DS4MapperTest
                                             if (tempAction is GyroMapAction)
                                             {
                                                 GyroMapAction gyroAction = tempAction as GyroMapAction;
-                                                //if (tempBind.id == "Gyro")
                                                 if (knownGyroSensDefinitions.TryGetValue(tempBind.id, out GyroSensDefinition tempDef))
                                                 {
                                                     gyroAction.GyroSensDefinition = tempDef;
                                                 }
 
-                                                //tempAction.DefaultUnbound = false;
                                                 tempAction.MappingId = tempBind.id;
                                                 tempLayer.gyroActionDict[tempBind.id] = tempAction as GyroMapAction;
                                                 if (parentLayer != null && parentLayer.gyroActionDict.TryGetValue(tempBind.id, out GyroMapAction tempParentGyroAction) &&
@@ -604,27 +845,11 @@ namespace DS4MapperTest
                                 }
                                 else if (layerMapping.InputBinding == $"{ActionSet.ACTION_SET_ACTION_PREFIX}{mapping.ActionSet}" && tempAction is ButtonMapAction)
                                 {
-                                    //if (tempAction is ButtonMapAction)
-                                    {
-                                        //tempAction.DefaultUnbound = false;
-                                        tempAction.MappingId = $"{ActionSet.ACTION_SET_ACTION_PREFIX}{mapping.ActionSet}";
-                                        tempLayer.actionSetActionDict[tempAction.MappingId] = tempAction as ButtonMapAction;
-                                        if (parentLayer != null && parentLayer.actionSetActionDict.TryGetValue(tempAction.MappingId, out ButtonMapAction tempParentBtnAction) &&
-                                            MapAction.IsSameType(tempAction, tempParentBtnAction))
-                                        {
-                                            //(tempAction as ButtonMapAction).SoftCopyFromParent(tempParentBtnAction);
-                                            //(tempAction as ButtonMapAction).CopyAction(tempParentBtnAction);
-                                        }
-
-                                        //if (parentLayer != null && parentLayer.LayerActions[layerMapping.ActionIndex] is ButtonMapAction)
-                                        //{
-                                        //    tempLayer.buttonActionDict[tempBind.id] = (tempAction as ButtonMapAction).DuplicateAction();
-                                        //}
-                                        //else
-                                        //{
-                                        //    tempLayer.buttonActionDict[tempBind.id] = tempAction as ButtonMapAction;
-                                        //}
-                                    }
+                                    // Action set actions are button actions, and like the
+                                    // button bindings above they deliberately do not
+                                    // soft-copy from the parent layer.
+                                    tempAction.MappingId = $"{ActionSet.ACTION_SET_ACTION_PREFIX}{mapping.ActionSet}";
+                                    tempLayer.actionSetActionDict[tempAction.MappingId] = tempAction as ButtonMapAction;
                                 }
                             }
                         }
@@ -633,31 +858,13 @@ namespace DS4MapperTest
                 }
             }
 
-            //tempProfile.CurrentActionSet.CreateDupActionLayer();
-            //tempLayer.buttonActionDict[tempBind.id] = tempAction as ButtonMapAction;
-            //(tempProfile.CurrentActionSet.ActionLayers[1].buttonActionDict["A"] as ButtonAction).ActionFuncs.Clear();
-            //(tempProfile.CurrentActionSet.ActionLayers[1].buttonActionDict["A"] as ButtonAction).ActionFuncs.Add(new NormalPressFunc(new OutputActionData(OutputActionData.ActionType.Keyboard, KeyInterop.VirtualKeyFromKey(Key.L))));
-            //new ButtonAction(new OutputActionData(OutputActionData.ActionType.Keyboard, KeyInterop.VirtualKeyFromKey(Key.L)));
-
-            // SyncActions for currently active ActionLayer instance
-            //foreach (ActionSet set in tempProfile.ActionSets)
-            //{
-            //    set.CurrentActionLayer.SyncActions();
-            //}
+            MigrateLegacyTouchpadClickBindings(tempProfile);
 
             // Compile convenience List for MapActions instances in layers
             foreach (ActionSet set in tempProfile.ActionSets)
             {
-                //int layerIdx = -1;
-                ActionLayer parentLayer = set.DefaultActionLayer;
                 foreach (ActionLayer layer in set.ActionLayers)
                 {
-                    //layerIdx++;
-                    //if (layerIdx > 0)
-                    //{
-                    //    parentLayer.MergeLayerActions(layer);
-                    //}
-
                     layer.SyncActions();
                 }
             }
@@ -666,12 +873,62 @@ namespace DS4MapperTest
             // base ActionLayer references
             foreach (ActionSet set in tempProfile.ActionSets)
             {
-                //ActionLayer parentLayer = set.DefaultActionLayer;
                 set.ClearCompositeLayerActions();
                 set.PrepareCompositeLayer();
             }
+        }
 
-            //tempProfile.CurrentActionSet.SwitchActionLayer(this, 1);
+        // Steam Controller 2 previously drove LeftPadClick/RightPadClick purely off the
+        // digital click bit through a plain ButtonAction ("Regular Press"). Profiles saved
+        // before pressure support was added still have that shape on disk. Upgrade them here,
+        // once per load, into a TouchpadPressureDualStageAction: the old binding's entire
+        // output (including any Hold/Double/etc. the user already configured) moves onto
+        // Full Press unchanged, Soft Press starts unbound, and defaults are
+        // Threshold/4096/17096/100ms.
+        // Other device types never carry a TouchpadPressureDualStageAction, so this is a no-op
+        // for them even if a binding named LeftPadClick/RightPadClick happens to exist.
+        protected void MigrateLegacyTouchpadClickBindings(Profile tempProfile)
+        {
+            if (DeviceType != InputDeviceType.SteamControllerTriton) return;
+
+            string[] pressureBindingIds = { "LeftPadClick", "RightPadClick" };
+
+            foreach (ActionSet set in tempProfile.ActionSets)
+            {
+                foreach (ActionLayer layer in set.ActionLayers)
+                {
+                    foreach (string bindingId in pressureBindingIds)
+                    {
+                        if (!layer.buttonActionDict.TryGetValue(bindingId, out ButtonMapAction existing) ||
+                            existing is not ButtonAction legacyAction)
+                        {
+                            continue;
+                        }
+
+                        TouchpadPressureDualStageAction migrated = new TouchpadPressureDualStageAction
+                        {
+                            Id = legacyAction.Id,
+                            MappingId = bindingId,
+                            Name = legacyAction.Name,
+                            ActivationStyle = TriggerDualStageAction.DualStageMode.Threshold,
+                            SoftPressThreshold = TouchpadPressureDualStageAction.DEFAULT_SOFT_THRESHOLD,
+                            FullPressThreshold = TouchpadPressureDualStageAction.DEFAULT_FULL_THRESHOLD,
+                        };
+
+                        migrated.FullPressActButton.ActionFuncs.Clear();
+                        migrated.FullPressActButton.ActionFuncs.AddRange(legacyAction.ActionFuncs);
+                        migrated.FullPressActButton.Name = legacyAction.Name;
+
+                        layer.buttonActionDict[bindingId] = migrated;
+
+                        int layerActionIndex = layer.LayerActions.IndexOf(legacyAction);
+                        if (layerActionIndex >= 0)
+                        {
+                            layer.LayerActions[layerActionIndex] = migrated;
+                        }
+                    }
+                }
+            }
         }
 
         public void UseBlankProfile()
@@ -681,7 +938,6 @@ namespace DS4MapperTest
             Profile tempProfile = actionProfile;
             profileFile = string.Empty;
 
-            //tempProfile.ActionSets.Clear();
             PrepareProfileActions(null);
         }
 
@@ -692,9 +948,6 @@ namespace DS4MapperTest
             // Populate ActionLayer dicts with default no action elements
             foreach (ActionSet set in tempProfile.ActionSets)
             {
-                //ActionLayer layer = set.ActionLayers.First();
-                //if (layer != null)
-
                 int layerIndex = 0;
                 foreach (ActionLayer layer in set.ActionLayers)
                 {
@@ -740,7 +993,7 @@ namespace DS4MapperTest
                                     break;
                                 case InputBindingMeta.InputControlType.Touchpad:
                                     {
-                                        TouchpadNoAction touchNoAct = new TouchpadNoAction();
+                                        TouchpadPassthruAction touchNoAct = new TouchpadPassthruAction();
                                         touchNoAct.MappingId = tempMeta.Key;
                                         if (knownTouchpadDefinitions.TryGetValue(tempMeta.Key, out TouchpadDefinition tempDef))
                                         {
@@ -752,7 +1005,7 @@ namespace DS4MapperTest
                                     break;
                                 case InputBindingMeta.InputControlType.TouchpadRegion:
                                     {
-                                        TouchpadNoAction touchNoAct = new TouchpadNoAction();
+                                        TouchpadPassthruAction touchNoAct = new TouchpadPassthruAction();
                                         touchNoAct.MappingId = tempMeta.Key;
                                         if (knownTouchpadDefinitions.TryGetValue(tempMeta.Key, out TouchpadDefinition tempDef))
                                         {
@@ -764,7 +1017,7 @@ namespace DS4MapperTest
                                     break;
                                 case InputBindingMeta.InputControlType.Gyro:
                                     {
-                                        GyroNoMapAction gyroNoMapAct = new GyroNoMapAction();
+                                        GyroPassthruAction gyroNoMapAct = new GyroPassthruAction();
                                         gyroNoMapAct.MappingId = tempMeta.Key;
                                         if (knownGyroSensDefinitions.TryGetValue(tempMeta.Key, out GyroSensDefinition tempDef))
                                         {
@@ -809,7 +1062,6 @@ namespace DS4MapperTest
 
                     if (tempLayer != null)
                     {
-                        //ActionLayer parentLayer = (mapping.ActionLayer > 0 && mapping.ActionLayer < tempLayer.LayerActions.Count) ? tempLayer : null;
                         ActionLayer parentLayer = tempLayer != tempSet.DefaultActionLayer ? tempSet.DefaultActionLayer : null;
                         foreach (LayerMapping layerMapping in mapping.LayerMappings)
                         {
@@ -817,7 +1069,6 @@ namespace DS4MapperTest
                                 tempLayer.LayerActions.Find((act) => act.Id == layerMapping.ActionIndex) : null;
                             if (tempAction != null)// layerMapping.ActionIndex < tempLayer.LayerActions.Count)
                             {
-                                //MapAction tempAction = tempLayer.LayerActions[layerMapping.ActionIndex];
                                 if (bindingDict.TryGetValue(layerMapping.InputBinding, out InputBindingMeta tempBind))
                                 {
                                     switch (tempBind.controlType)
@@ -825,31 +1076,17 @@ namespace DS4MapperTest
                                         case InputBindingMeta.InputControlType.Button:
                                             if (tempAction is ButtonMapAction)
                                             {
-                                                //tempAction.DefaultUnbound = false;
+                                                // Unlike every other control type below, button
+                                                // actions deliberately do not soft-copy from the
+                                                // parent layer.
                                                 tempAction.MappingId = tempBind.id;
                                                 tempLayer.buttonActionDict[tempBind.id] = tempAction as ButtonMapAction;
-                                                if (parentLayer != null && parentLayer.buttonActionDict.TryGetValue(tempBind.id, out ButtonMapAction tempParentBtnAction) &&
-                                                    MapAction.IsSameType(tempAction, tempParentBtnAction))
-                                                {
-                                                    //(tempAction as ButtonMapAction).SoftCopyFromParent(tempParentBtnAction);
-                                                    //(tempAction as ButtonMapAction).CopyAction(tempParentBtnAction);
-                                                }
-
-                                                //if (parentLayer != null && parentLayer.LayerActions[layerMapping.ActionIndex] is ButtonMapAction)
-                                                //{
-                                                //    tempLayer.buttonActionDict[tempBind.id] = (tempAction as ButtonMapAction).DuplicateAction();
-                                                //}
-                                                //else
-                                                //{
-                                                //    tempLayer.buttonActionDict[tempBind.id] = tempAction as ButtonMapAction;
-                                                //}
                                             }
 
                                             break;
                                         case InputBindingMeta.InputControlType.DPad:
                                             if (tempAction is DPadMapAction)
                                             {
-                                                //tempAction.DefaultUnbound = false;
                                                 tempAction.MappingId = tempBind.id;
                                                 tempLayer.dpadActionDict[tempBind.id] = tempAction as DPadMapAction;
                                                 if (parentLayer != null && parentLayer.dpadActionDict.TryGetValue(tempBind.id, out DPadMapAction tempParentDpadAction) &&
@@ -869,7 +1106,6 @@ namespace DS4MapperTest
                                                     tempStickAction.StickDefinition = tempDef;
                                                 }
 
-                                                //tempAction.DefaultUnbound = false;
                                                 tempAction.MappingId = tempBind.id;
                                                 tempLayer.stickActionDict[tempBind.id] = tempStickAction;
 
@@ -890,7 +1126,6 @@ namespace DS4MapperTest
                                                     triggerAct.TriggerDef = tempDef;
                                                 }
 
-                                                //tempAction.DefaultUnbound = false;
                                                 tempAction.MappingId = tempBind.id;
                                                 tempLayer.triggerActionDict[tempBind.id] = tempAction as TriggerMapAction;
                                                 if (parentLayer != null && parentLayer.triggerActionDict.TryGetValue(tempBind.id, out TriggerMapAction tempParentTrigAction) &&
@@ -910,7 +1145,6 @@ namespace DS4MapperTest
                                                     touchAct.TouchDefinition = tempDef;
                                                 }
 
-                                                //tempAction.DefaultUnbound = false;
                                                 tempAction.MappingId = tempBind.id;
                                                 tempLayer.touchpadActionDict[tempBind.id] = tempAction as TouchpadMapAction;
                                                 if (parentLayer != null && parentLayer.touchpadActionDict.TryGetValue(tempBind.id, out TouchpadMapAction tempParentTouchAction) &&
@@ -927,13 +1161,11 @@ namespace DS4MapperTest
                                             if (tempAction is GyroMapAction)
                                             {
                                                 GyroMapAction gyroAction = tempAction as GyroMapAction;
-                                                //if (tempBind.id == "Gyro")
                                                 if (knownGyroSensDefinitions.TryGetValue(tempBind.id, out GyroSensDefinition tempDef))
                                                 {
                                                     gyroAction.GyroSensDefinition = tempDef;
                                                 }
 
-                                                //tempAction.DefaultUnbound = false;
                                                 tempAction.MappingId = tempBind.id;
                                                 tempLayer.gyroActionDict[tempBind.id] = tempAction as GyroMapAction;
                                                 if (parentLayer != null && parentLayer.gyroActionDict.TryGetValue(tempBind.id, out GyroMapAction tempParentGyroAction) &&
@@ -950,27 +1182,11 @@ namespace DS4MapperTest
                                 }
                                 else if (layerMapping.InputBinding == $"{ActionSet.ACTION_SET_ACTION_PREFIX}{mapping.ActionSet}" && tempAction is ButtonMapAction)
                                 {
-                                    //if (tempAction is ButtonMapAction)
-                                    {
-                                        //tempAction.DefaultUnbound = false;
-                                        tempAction.MappingId = $"{ActionSet.ACTION_SET_ACTION_PREFIX}{mapping.ActionSet}";
-                                        tempLayer.actionSetActionDict[tempAction.MappingId] = tempAction as ButtonMapAction;
-                                        if (parentLayer != null && parentLayer.actionSetActionDict.TryGetValue(tempAction.MappingId, out ButtonMapAction tempParentBtnAction) &&
-                                            MapAction.IsSameType(tempAction, tempParentBtnAction))
-                                        {
-                                            //(tempAction as ButtonMapAction).SoftCopyFromParent(tempParentBtnAction);
-                                            //(tempAction as ButtonMapAction).CopyAction(tempParentBtnAction);
-                                        }
-
-                                        //if (parentLayer != null && parentLayer.LayerActions[layerMapping.ActionIndex] is ButtonMapAction)
-                                        //{
-                                        //    tempLayer.buttonActionDict[tempBind.id] = (tempAction as ButtonMapAction).DuplicateAction();
-                                        //}
-                                        //else
-                                        //{
-                                        //    tempLayer.buttonActionDict[tempBind.id] = tempAction as ButtonMapAction;
-                                        //}
-                                    }
+                                    // Action set actions are button actions, and like the
+                                    // button bindings above they deliberately do not
+                                    // soft-copy from the parent layer.
+                                    tempAction.MappingId = $"{ActionSet.ACTION_SET_ACTION_PREFIX}{mapping.ActionSet}";
+                                    tempLayer.actionSetActionDict[tempAction.MappingId] = tempAction as ButtonMapAction;
                                 }
                             }
                         }
@@ -979,31 +1195,11 @@ namespace DS4MapperTest
                 }
             }
 
-            //tempProfile.CurrentActionSet.CreateDupActionLayer();
-            //tempLayer.buttonActionDict[tempBind.id] = tempAction as ButtonMapAction;
-            //(tempProfile.CurrentActionSet.ActionLayers[1].buttonActionDict["A"] as ButtonAction).ActionFuncs.Clear();
-            //(tempProfile.CurrentActionSet.ActionLayers[1].buttonActionDict["A"] as ButtonAction).ActionFuncs.Add(new NormalPressFunc(new OutputActionData(OutputActionData.ActionType.Keyboard, KeyInterop.VirtualKeyFromKey(Key.L))));
-            //new ButtonAction(new OutputActionData(OutputActionData.ActionType.Keyboard, KeyInterop.VirtualKeyFromKey(Key.L)));
-
-            // SyncActions for currently active ActionLayer instance
-            //foreach (ActionSet set in tempProfile.ActionSets)
-            //{
-            //    set.CurrentActionLayer.SyncActions();
-            //}
-
             // Compile convenience List for MapActions instances in layers
             foreach (ActionSet set in tempProfile.ActionSets)
             {
-                //int layerIdx = -1;
-                ActionLayer parentLayer = set.DefaultActionLayer;
                 foreach (ActionLayer layer in set.ActionLayers)
                 {
-                    //layerIdx++;
-                    //if (layerIdx > 0)
-                    //{
-                    //    parentLayer.MergeLayerActions(layer);
-                    //}
-
                     layer.SyncActions();
                 }
             }
@@ -1012,14 +1208,9 @@ namespace DS4MapperTest
             // base ActionLayer references
             foreach (ActionSet set in tempProfile.ActionSets)
             {
-                //ActionLayer parentLayer = set.DefaultActionLayer;
                 set.ClearCompositeLayerActions();
                 set.PrepareCompositeLayer();
             }
-
-            //tempProfile.CurrentActionSet.SwitchActionLayer(this, 1);
-
-            Trace.WriteLine("IT IS FINISHED");
         }
 
         public void PrepopulateBlankActionLayer(ActionLayer layer)
@@ -1064,7 +1255,7 @@ namespace DS4MapperTest
                         break;
                     case InputBindingMeta.InputControlType.Touchpad:
                         {
-                            TouchpadNoAction touchNoAct = new TouchpadNoAction();
+                            TouchpadPassthruAction touchNoAct = new TouchpadPassthruAction();
                             touchNoAct.MappingId = tempMeta.Key;
                             if (knownTouchpadDefinitions.TryGetValue(tempMeta.Key, out TouchpadDefinition tempDef))
                             {
@@ -1076,7 +1267,7 @@ namespace DS4MapperTest
                         break;
                     case InputBindingMeta.InputControlType.Gyro:
                         {
-                            GyroNoMapAction gyroNoMapAct = new GyroNoMapAction();
+                            GyroPassthruAction gyroNoMapAct = new GyroPassthruAction();
                             gyroNoMapAct.MappingId = tempMeta.Key;
                             if (knownGyroSensDefinitions.TryGetValue(tempMeta.Key, out GyroSensDefinition tempDef))
                             {
@@ -1099,12 +1290,6 @@ namespace DS4MapperTest
         {
             //if (!inMapperEvent)
             {
-                //if (calibrationFinished)
-                //{
-                //    // Disconnect event
-                //    reader.Report -= ControllerReader_Report;
-                //}
-
                 // Reset actions from current profile
                 actionProfile.CurrentActionSet.ReleaseActions(this, true);
 
@@ -1125,12 +1310,14 @@ namespace DS4MapperTest
 
                 // Change profile path
                 profileFile = profilePath;
+                loggedFirstVirtualState = false;
 
                 // Read file
                 try
                 {
                     ReadFromProfile();
                     ProfileChanged?.Invoke(this, profileFile);
+                    logger.Info($"Mapper {DeviceType} applying profile '{Path.GetFileNameWithoutExtension(profileFile)}' output={actionProfile.OutputGamepadSettings.OutputGamepad} enabled={actionProfile.OutputGamepadSettings.Enabled}");
                 }
                 catch (JsonException e)
                 {
@@ -1140,142 +1327,56 @@ namespace DS4MapperTest
                     throw e;
                 }
 
-                // Check if requested output controller is different than the currently
-                // connected type
-                if (actionProfile.OutputGamepadSettings.Enabled &&
-                    actionProfile.OutputGamepadSettings.OutputGamepad != outputControlType)
-                {
-                    if (deviceHandle != 0)
-                    {
-                        if (outputControlType == OutputContType.Xbox360)
-                        {
-                            LibVIIPER.RemoveXbox360Device(deviceHandle);
-                        }
-                        else if (outputControlType == OutputContType.DualShock4)
-                        {
-                            LibVIIPER.RemoveDS4Device(deviceHandle);
-                        }
-                    }
-
-                    deviceHandle = 0;
-                    viiperBusId = 0; // Reset bus ID slot for old device handle
-                    outputControlType = OutputContType.None;
-                    Thread.Sleep(100); // More of a pre-caution
-                }
-
-                // Create virtual controller if desired
-                if (actionProfile.OutputGamepadSettings.Enabled && actionProfile.OutputGamepadSettings.OutputGamepad != OutputContType.None)
-                {
-                    if (actionProfile.OutputGamepadSettings.OutputGamepad == OutputContType.Xbox360)
-                    {
-                        if (!LibVIIPER.CreateUSBBus(viiperServerHandle, ref viiperBusId))
-                        {
-                            Trace.WriteLine("Fatal Error: Failed to create USB bus.");
-                            return;
-                        }
-
-                        // Add a small delay before plugging in virtual device
-                        Thread.Sleep(200);
-
-                        if (!LibVIIPER.CreateXbox360Device(viiperServerHandle, out deviceHandle, viiperBusId, true, 0, 0, 0))
-                        {
-                            Trace.WriteLine("Fatal Error: Failed to create Xbox 360 virtual device.");
-                            //return;
-                        }
-
-                        outputControlType = OutputContType.Xbox360;
-                    }
-                    else if (actionProfile.OutputGamepadSettings.OutputGamepad == OutputContType.DualShock4)
-                    {
-                        if (!LibVIIPER.CreateUSBBus(viiperServerHandle, ref viiperBusId))
-                        {
-                            Trace.WriteLine("Fatal Error: Failed to create USB bus.");
-                            return;
-                        }
-
-                        // Add a small delay before plugging in virtual device
-                        Thread.Sleep(200);
-
-                        if (!LibVIIPER.CreateDS4Device(viiperServerHandle, out deviceHandle, viiperBusId, true, 0, 0))
-                        {
-                            Trace.WriteLine("Fatal Error: Failed to create DS4 virtual device.");
-                            //return;
-                        }
-
-                        //outputController = null;
-                        outputControlType = OutputContType.DualShock4;
-                    }
-                }
-                else if (!actionProfile.OutputGamepadSettings.enabled && outputControlType != OutputContType.None)
-                {
-                    RemoveFeedback();
-
-                    if (deviceHandle != 0)
-                    {
-                        if (outputControlType == OutputContType.Xbox360)
-                        {
-                            LibVIIPER.RemoveXbox360Device(deviceHandle);
-                        }
-                        else if (outputControlType == OutputContType.DualShock4)
-                        {
-                            LibVIIPER.RemoveDS4Device(deviceHandle);
-                        }
-                    }
-
-                    deviceHandle = 0;
-                    viiperBusId = 0; // Reset bus ID slot for old device handle
-                    outputControlType = OutputContType.None;
-                }
-
-                // Check for current output controller and check for desired vibration
-                // status
-                if (actionProfile.OutputGamepadSettings.ForceFeedbackEnabled &&
-                    outputControlType == OutputContType.Xbox360)
-                {
-                    Thread.Sleep(100);
-                    EstablishForceFeedback();
-                    HookFeedback();
-                }
-                else if (!actionProfile.OutputGamepadSettings.ForceFeedbackEnabled &&
-                    outputControlType == OutputContType.Xbox360)
-                {
-                    RemoveFeedback();
-                }
-
+                RefreshViiperOutput();
                 PostProfileChange?.Invoke(this, EventArgs.Empty);
-
-                //if (calibrationFinished)
-                //{
-                //    // Re-connect event
-                //    reader.Report += ControllerReader_Report;
-                //}
-
-                //ProfileChanged?.Invoke(this, profilePath);
-
-                //ProfileSerializer profileSerializer = new ProfileSerializer(actionProfile);
-                //string tempOutJson = JsonConvert.SerializeObject(profileSerializer, Formatting.Indented,
-                //    new JsonSerializerSettings()
-                //    {
-                //        //Converters = new List<JsonConverter>()
-                //        //{
-                //        //    new MapActionSubTypeConverter(),
-                //        //}
-                //        //TypeNameHandling = TypeNameHandling.Objects
-                //        //ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-                //    });
-                //Trace.WriteLine(tempOutJson);
             }
         }
 
         public virtual void HookFeedback()
         {
-            bool _ = LibVIIPER.SetXbox360RumbleCallback(deviceHandle, viiper360Feedback);
-            //Trace.WriteLine($"RESULT {result}");
+            lock (viiperDeviceLock)
+            {
+                if (!IsPlausibleViiperDeviceHandle(deviceHandle))
+                {
+                    return;
+                }
+
+                if (outputControlType == OutputContType.Xbox360)
+                {
+                    LibVIIPER.SetXbox360RumbleCallback(deviceHandle, viiper360Feedback);
+                }
+                else if (outputControlType == OutputContType.DualSense ||
+                    outputControlType == OutputContType.DualSenseEdge)
+                {
+                    LibVIIPER.SetDualSenseOutputCallback(deviceHandle, viiperDSFeedback);
+                }
+                else if (outputControlType == OutputContType.SwitchPro2)
+                {
+                    LibVIIPER.SetNS2ProOutputCallback(deviceHandle, viiperNS2ProFeedback);
+                }
+            }
         }
 
         public virtual void RemoveFeedback()
         {
+            if (!IsPlausibleViiperDeviceHandle(deviceHandle))
+            {
+                return;
+            }
 
+            if (outputControlType == OutputContType.Xbox360)
+            {
+                bool _ = LibVIIPER.SetXbox360RumbleCallback(deviceHandle, null);
+            }
+            else if (outputControlType == OutputContType.DualSense ||
+                outputControlType == OutputContType.DualSenseEdge)
+            {
+                bool _ = LibVIIPER.SetDualSenseOutputCallback(deviceHandle, null);
+            }
+            else if (outputControlType == OutputContType.SwitchPro2)
+            {
+                bool _ = LibVIIPER.SetNS2ProOutputCallback(deviceHandle, null);
+            }
         }
 
         public void SyncKeyboard()
@@ -1292,8 +1393,6 @@ namespace DS4MapperTest
 #if !MAKE_TESTS
                         eventInputHandler.PerformKeyRelease(vk);
 #endif
-                        //keyboardReport.KeyUp((KeyboardKey)vk);
-                        //InputMethods.performKeyRelease((ushort)vk);
                         keyReferenceCountDict.Remove(vk);
                     }
                     else
@@ -1310,13 +1409,11 @@ namespace DS4MapperTest
 #if !MAKE_TESTS
                     eventInputHandler.PerformKeyPress(vk);
 #endif
-                    //keyboardReport.KeyDown((KeyboardKey)vk);
-                    //InputMethods.performKeyPress((ushort)vk);
                     keyReferenceCountDict.Add(vk, 1);
                 }
                 else
                 {
-                    keyReferenceCountDict[vk] = refCount++;
+                    keyReferenceCountDict[vk] = refCount + 1;
                 }
             }
 
@@ -1331,101 +1428,25 @@ namespace DS4MapperTest
 
             foreach (int mouseCode in removed)
             {
-                if (currentMouseButtons.Contains(mouseCode))
+                if (mouseOutputDispatcher != null)
                 {
-                    uint mouseButton = 0;
-                    uint xbuttonCode = 0;
-                    switch (mouseCode)
-                    {
-                        case MouseButtonCodes.MOUSE_LEFT_BUTTON:
-                            mouseButton = eventInputMapping.MOUSEEVENTF_LEFTUP;
-                            //mouseButton = InputMethods.MOUSEEVENTF_LEFTUP;
-                            break;
-                        case MouseButtonCodes.MOUSE_MIDDLE_BUTTON:
-                            mouseButton = eventInputMapping.MOUSEEVENTF_MIDDLEUP;
-                            //mouseButton = InputMethods.MOUSEEVENTF_MIDDLEUP;
-                            break;
-                        case MouseButtonCodes.MOUSE_RIGHT_BUTTON:
-                            mouseButton = eventInputMapping.MOUSEEVENTF_RIGHTUP;
-                            //mouseButton = InputMethods.MOUSEEVENTF_RIGHTUP;
-                            break;
-                        case MouseButtonCodes.MOUSE_XBUTTON1:
-                            mouseButton = eventInputMapping.MOUSEEVENTF_XBUTTONUP;
-                            xbuttonCode = 1;
-                            break;
-                        case MouseButtonCodes.MOUSE_XBUTTON2:
-                            mouseButton = eventInputMapping.MOUSEEVENTF_XBUTTONUP;
-                            xbuttonCode = 2;
-                            break;
-                        default:
-                            break;
-                    }
-
-                    if (mouseButton != 0)
-                    {
-                        if (xbuttonCode == 0)
-                        {
-                            eventInputHandler.PerformMouseButtonEvent(mouseButton);
-                            //mouseReport.ButtonUp((FakerInputWrapper.MouseButton)mouseButton);
-                            //InputMethods.MouseEvent(mouseButton);
-                        }
-                        else
-                        {
-                            eventInputHandler.PerformMouseButtonEventAlt(mouseButton, (int)xbuttonCode);
-                        }
-
-                        currentMouseButtons.Remove(mouseCode);
-                    }
+                    mouseOutputDispatcher.SetButton(mouseOutputProducerId, MouseOutputRoute.Gyro, mouseCode, false);
+                }
+                else
+                {
+                    ReleaseSharedMouseButton(eventInputHandler, eventInputMapping, mouseCode);
                 }
             }
 
             foreach (int mouseCode in added)
             {
-                if (!currentMouseButtons.Contains(mouseCode))
+                if (mouseOutputDispatcher != null)
                 {
-                    uint mouseButton = 0;
-                    uint xbuttonCode = 0;
-                    switch (mouseCode)
-                    {
-                        case MouseButtonCodes.MOUSE_LEFT_BUTTON:
-                            mouseButton = eventInputMapping.MOUSEEVENTF_LEFTDOWN;
-                            //mouseButton = InputMethods.MOUSEEVENTF_LEFTDOWN;
-                            break;
-                        case MouseButtonCodes.MOUSE_MIDDLE_BUTTON:
-                            mouseButton = eventInputMapping.MOUSEEVENTF_MIDDLEDOWN;
-                            //mouseButton = InputMethods.MOUSEEVENTF_MIDDLEDOWN;
-                            break;
-                        case MouseButtonCodes.MOUSE_RIGHT_BUTTON:
-                            mouseButton = eventInputMapping.MOUSEEVENTF_RIGHTDOWN;
-                            //mouseButton = InputMethods.MOUSEEVENTF_RIGHTDOWN;
-                            break;
-                        case MouseButtonCodes.MOUSE_XBUTTON1:
-                            mouseButton = eventInputMapping.MOUSEEVENTF_XBUTTONUP;
-                            xbuttonCode = 1;
-                            break;
-                        case MouseButtonCodes.MOUSE_XBUTTON2:
-                            mouseButton = eventInputMapping.MOUSEEVENTF_XBUTTONUP;
-                            xbuttonCode = 2;
-                            break;
-                        default:
-                            break;
-                    }
-
-                    if (mouseButton != 0)
-                    {
-                        if (xbuttonCode == 0)
-                        {
-                            eventInputHandler.PerformMouseButtonPress(mouseButton);
-                            //mouseReport.ButtonDown((FakerInputWrapper.MouseButton)mouseCode);
-                            //InputMethods.MouseEvent(mouseButton);
-                        }
-                        else
-                        {
-                            eventInputHandler.PerformMouseButtonEventAlt(mouseButton, (int)xbuttonCode);
-                        }
-
-                        currentMouseButtons.Add(mouseCode);
-                    }
+                    mouseOutputDispatcher.SetButton(mouseOutputProducerId, MouseOutputRoute.Gyro, mouseCode, true);
+                }
+                else
+                {
+                    AcquireSharedMouseButton(eventInputHandler, eventInputMapping, mouseCode);
                 }
             }
 
@@ -1433,17 +1454,136 @@ namespace DS4MapperTest
             activeMouseButtons.Clear();
         }
 
+        /// <summary>
+        /// Adds one holder to a shared virtual mouse button, pressing it on
+        /// the underlying handler only on the 0-to-1 transition. Used by
+        /// SyncMouseButtons() for controller bindings and by physical-mouse
+        /// forwarding (see DS4MapperTest.PhysicalMouse.PhysicalMouseForwarder)
+        /// so neither source can release a button the other still holds.
+        /// </summary>
+        internal static void AcquireSharedMouseButton(VirtualKBMBase handler, VirtualKBMMapping mapping, int mouseCode)
+        {
+            lock (mouseButtonRefLock)
+            {
+                if (!mouseButtonReferenceCountDict.TryGetValue(mouseCode, out int refCount))
+                {
+                    uint mouseButton = GetMouseButtonDownFlag(mapping, mouseCode);
+                    if (mouseButton != 0)
+                    {
+                        int xbuttonData = GetXButtonData(mapping, mouseCode);
+                        if (xbuttonData != 0)
+                        {
+                            handler.PerformMouseButtonPressAlt(mouseButton, xbuttonData);
+                        }
+                        else
+                        {
+                            handler.PerformMouseButtonPress(mouseButton);
+                        }
+                        mouseButtonReferenceCountDict.Add(mouseCode, 1);
+                        currentMouseButtons.Add(mouseCode);
+                    }
+                }
+                else
+                {
+                    mouseButtonReferenceCountDict[mouseCode] = refCount + 1;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Removes one holder from a shared virtual mouse button, releasing
+        /// it on the underlying handler only once every holder has released
+        /// it (refcount reaches 0). See <see cref="AcquireSharedMouseButton"/>.
+        /// </summary>
+        internal static void ReleaseSharedMouseButton(VirtualKBMBase handler, VirtualKBMMapping mapping, int mouseCode)
+        {
+            lock (mouseButtonRefLock)
+            {
+                if (mouseButtonReferenceCountDict.TryGetValue(mouseCode, out int refCount))
+                {
+                    refCount--;
+                    if (refCount <= 0)
+                    {
+                        uint mouseButton = GetMouseButtonUpFlag(mapping, mouseCode);
+                        if (mouseButton != 0)
+                        {
+                            int xbuttonData = GetXButtonData(mapping, mouseCode);
+                            if (xbuttonData != 0)
+                            {
+                                handler.PerformMouseButtonReleaseAlt(mouseButton, xbuttonData);
+                            }
+                            else
+                            {
+                                handler.PerformMouseButtonRelease(mouseButton);
+                            }
+                        }
+
+                        mouseButtonReferenceCountDict.Remove(mouseCode);
+                        currentMouseButtons.Remove(mouseCode);
+                    }
+                    else
+                    {
+                        mouseButtonReferenceCountDict[mouseCode] = refCount;
+                    }
+                }
+            }
+        }
+
+        private static uint GetMouseButtonDownFlag(VirtualKBMMapping mapping, int mouseCode)
+        {
+            switch (mouseCode)
+            {
+                case MouseButtonCodes.MOUSE_LEFT_BUTTON:
+                    return mapping.MOUSEEVENTF_LEFTDOWN;
+                case MouseButtonCodes.MOUSE_MIDDLE_BUTTON:
+                    return mapping.MOUSEEVENTF_MIDDLEDOWN;
+                case MouseButtonCodes.MOUSE_RIGHT_BUTTON:
+                    return mapping.MOUSEEVENTF_RIGHTDOWN;
+                case MouseButtonCodes.MOUSE_XBUTTON1:
+                    return mapping.MOUSEEVENTF_XBUTTON1DOWN;
+                case MouseButtonCodes.MOUSE_XBUTTON2:
+                    return mapping.MOUSEEVENTF_XBUTTON2DOWN;
+                default:
+                    return 0;
+            }
+        }
+
+        private static uint GetMouseButtonUpFlag(VirtualKBMMapping mapping, int mouseCode)
+        {
+            switch (mouseCode)
+            {
+                case MouseButtonCodes.MOUSE_LEFT_BUTTON:
+                    return mapping.MOUSEEVENTF_LEFTUP;
+                case MouseButtonCodes.MOUSE_MIDDLE_BUTTON:
+                    return mapping.MOUSEEVENTF_MIDDLEUP;
+                case MouseButtonCodes.MOUSE_RIGHT_BUTTON:
+                    return mapping.MOUSEEVENTF_RIGHTUP;
+                case MouseButtonCodes.MOUSE_XBUTTON1:
+                    return mapping.MOUSEEVENTF_XBUTTON1UP;
+                case MouseButtonCodes.MOUSE_XBUTTON2:
+                    return mapping.MOUSEEVENTF_XBUTTON2UP;
+                default:
+                    return 0;
+            }
+        }
+
+        private static int GetXButtonData(VirtualKBMMapping mapping, int mouseCode)
+        {
+            switch (mouseCode)
+            {
+                case MouseButtonCodes.MOUSE_XBUTTON1:
+                    return mapping.MOUSEEVENTF_XBUTTON1DATA;
+                case MouseButtonCodes.MOUSE_XBUTTON2:
+                    return mapping.MOUSEEVENTF_XBUTTON2DATA;
+                default:
+                    return 0;
+            }
+        }
+
         public void TranslateCoorToAbsDisplay(double inX, double inY,
             ref Rect absDisplayBounds, ref Rect fullDesktopBounds,
             out double outX, out double outY)
         {
-            //outX = outY = 0.0;
-            //int topLeftX = (int)absDisplayBounds.Left;
-            //double testLeft = 0.0;
-            //double testRight = 0.0;
-            //double testTop = 0.0;
-            //double testBottom = 0.0;
-
             double widthRatio = (absDisplayBounds.Left + absDisplayBounds.Right) / fullDesktopBounds.Width;
             double heightRatio = (absDisplayBounds.Top + absDisplayBounds.Bottom) / fullDesktopBounds.Height;
             double bX = absDisplayBounds.Left / fullDesktopBounds.Width;
@@ -1451,8 +1591,6 @@ namespace DS4MapperTest
 
             outX = widthRatio * inX + bX;
             outY = heightRatio * inY + bY;
-            //outX = (absDisplayBounds.TopRight.X - absDisplayBounds.TopLeft.X) * inX + absDisplayBounds.TopLeft.X;
-            //outY = (absDisplayBounds.BottomRight.Y - absDisplayBounds.TopLeft.Y) * inY + absDisplayBounds.TopLeft.Y;
         }
 
 
@@ -1478,16 +1616,6 @@ namespace DS4MapperTest
                     mouseYRemainder = 0.0;
                 }
 
-                //mouseX = filterX.Filter(mouseX, 1.0 / 0.016);
-                //mouseY = filterY.Filter(mouseY, 1.0 / 0.016);
-                //mouseX = filterX.Filter(mouseX, currentRate);
-                //mouseY = filterY.Filter(mouseY, currentRate);
-
-                //// Filter does not go back to absolute zero for reasons.Check
-                //// for low number and reset to zero
-                //if (Math.Abs(mouseX) < 0.0001) mouseX = 0.0;
-                //if (Math.Abs(mouseY) < 0.0001) mouseY = 0.0;
-
                 double mouseXTemp = mouseX - (remainderCutoff(mouseX * 100.0, 1.0) / 100.0);
                 int mouseXInt = (int)(mouseXTemp);
                 mouseXRemainder = mouseXTemp - mouseXInt;
@@ -1496,17 +1624,10 @@ namespace DS4MapperTest
                 int mouseYInt = (int)(mouseYTemp);
                 mouseYRemainder = mouseYTemp - mouseYInt;
                 eventInputHandler.MoveRelativeMouse(mouseXInt, mouseYInt);
-                //mouseReport.MouseX = (short)mouseXInt;
-                //mouseReport.MouseY = (short)mouseYInt;
-                //InputMethods.MoveCursorBy(mouseXInt, mouseYInt);
             }
             else
             {
                 mouseXRemainder = mouseYRemainder = 0.0;
-                //mouseX = filterX.Filter(0.0, 1.0 / 0.016);
-                //mouseY = filterY.Filter(0.0, 1.0 / 0.016);
-                //filterX.Filter(mouseX, currentRate);
-                //filterY.Filter(mouseY, currentRate);
             }
 
             mouseX = mouseY = 0.0;
@@ -1535,12 +1656,10 @@ namespace DS4MapperTest
                     mouseYRemainder = 0.0;
                 }
 
-                //mouseX = filterX.Filter(mouseX, 1.0 / 0.016);
-                //mouseY = filterY.Filter(mouseY, 1.0 / 0.016);
                 mouseX = filterX.Filter(mouseX, currentRate);
                 mouseY = filterY.Filter(mouseY, currentRate);
 
-                // Filter does not go back to absolute zero for reasons.Check
+                // Filter does not go back to absolute zero for reasons. Check
                 // for low number and reset to zero
                 if (Math.Abs(mouseX) < 0.0001) mouseX = 0.0;
                 if (Math.Abs(mouseY) < 0.0001) mouseY = 0.0;
@@ -1553,15 +1672,10 @@ namespace DS4MapperTest
                 int mouseYInt = (int)(mouseYTemp);
                 mouseYRemainder = mouseYTemp - mouseYInt;
                 eventInputHandler.MoveRelativeMouse(mouseXInt, mouseYInt);
-                //mouseReport.MouseX = (short)mouseXInt;
-                //mouseReport.MouseY = (short)mouseYInt;
-                //InputMethods.MoveCursorBy(mouseXInt, mouseYInt);
             }
             else
             {
                 mouseXRemainder = mouseYRemainder = 0.0;
-                //mouseX = filterX.Filter(0.0, 1.0 / 0.016);
-                //mouseY = filterY.Filter(0.0, 1.0 / 0.016);
                 filterX.Filter(mouseX, currentRate);
                 filterY.Filter(mouseY, currentRate);
             }
@@ -1575,58 +1689,19 @@ namespace DS4MapperTest
         {
             if (mouseX != 0.0 || mouseY != 0.0)
             {
-                //if ((mouseX > 0.0 && mouseXRemainder > 0.0) || (mouseX < 0.0 && mouseXRemainder < 0.0))
-                //{
-                //    mouseX += mouseXRemainder;
-                //}
-                //else
-                //{
-                //    mouseXRemainder = 0.0;
-                //}
-
-                //if ((mouseY > 0.0 && mouseYRemainder > 0.0) || (mouseY < 0.0 && mouseYRemainder < 0.0))
-                //{
-                //    mouseY += mouseYRemainder;
-                //}
-                //else
-                //{
-                //    mouseYRemainder = 0.0;
-                //}
-
-                //mouseX = filterX.Filter(mouseX, 1.0 / 0.016);
-                //mouseY = filterY.Filter(mouseY, 1.0 / 0.016);
                 mouseX = filterX.Filter(mouseX, currentRate);
                 mouseY = filterY.Filter(mouseY, currentRate);
 
-                // Filter does not go back to absolute zero for reasons.Check
+                // Filter does not go back to absolute zero for reasons. Check
                 // for low number and reset to zero
                 if (Math.Abs(mouseX) < 0.0001) mouseX = 0.0;
                 if (Math.Abs(mouseY) < 0.0001) mouseY = 0.0;
-
-                //double mouseXTemp = mouseX - (remainderCutoff(mouseX * 100.0, 1.0) / 100.0);
-                //int mouseXInt = (int)(mouseXTemp);
-                //mouseXRemainder = mouseXTemp - mouseXInt;
-
-                //double mouseYTemp = mouseY - (remainderCutoff(mouseY * 100.0, 1.0) / 100.0);
-                //int mouseYInt = (int)(mouseYTemp);
-                //mouseYRemainder = mouseYTemp - mouseYInt;
-
-                //eventInputHandler.MoveRelativeMouse(mouseXInt, mouseYInt);
-
-                //mouseReport.MouseX = (short)mouseXInt;
-                //mouseReport.MouseY = (short)mouseYInt;
-                //InputMethods.MoveCursorBy(mouseXInt, mouseYInt);
             }
             else
             {
-                //mouseXRemainder = mouseYRemainder = 0.0;
-                //mouseX = filterX.Filter(0.0, 1.0 / 0.016);
-                //mouseY = filterY.Filter(0.0, 1.0 / 0.016);
                 filterX.Filter(mouseX, currentRate);
                 filterY.Filter(mouseY, currentRate);
             }
-
-            //mouseX = mouseY = 0.0;
         }
 
         public double remainderCutoff(double dividend, double divisor)
@@ -1634,15 +1709,135 @@ namespace DS4MapperTest
             return dividend - (divisor * (int)(dividend / divisor));
         }
 
-        //protected short AxisScale(int value, bool flip)
-        //{
-        //    unchecked
-        //    {
-        //        float temp = (value - STICK_MIN) * reciprocalInputResolution;
-        //        if (flip) temp = (temp - 0.5f) * -1.0f + 0.5f;
-        //        return (short)(temp * OUTPUT_X360_RESOLUTION + X360_STICK_MIN);
-        //    }
-        //}
+        private RelativeRouteMouseState GetRouteMouseState(MouseOutputRoute route)
+        {
+            if (!routeMouseStates.TryGetValue(route, out RelativeRouteMouseState state))
+            {
+                state = new RelativeRouteMouseState();
+                routeMouseStates[route] = state;
+            }
+
+            return state;
+        }
+
+        public void AddRouteRelativeMouseMotion(MouseOutputRoute route, double x, double y)
+        {
+            RelativeRouteMouseState state = GetRouteMouseState(route);
+            state.X += x;
+            state.Y += y;
+        }
+
+        public void SetRouteRelativeMouseMotion(MouseOutputRoute route, double x, double y)
+        {
+            RelativeRouteMouseState state = GetRouteMouseState(route);
+            state.X = x;
+            state.Y = y;
+        }
+
+        public void SetRouteRelativeMouseSync(MouseOutputRoute route, bool sync)
+        {
+            GetRouteMouseState(route).Sync = sync;
+        }
+
+        public void SetRouteMouseRemainder(MouseOutputRoute route, double x, double y)
+        {
+            RelativeRouteMouseState state = GetRouteMouseState(route);
+            state.XRemainder = x;
+            state.YRemainder = y;
+        }
+
+        public void AddRouteWheel(MouseOutputRoute route, int horizontal, int vertical)
+        {
+            RelativeRouteMouseState state = GetRouteMouseState(route);
+            state.WheelX += horizontal;
+            state.WheelY += vertical;
+            state.WheelSync = true;
+        }
+
+        public void SetRouteWheel(MouseOutputRoute route, int horizontal, int vertical)
+        {
+            RelativeRouteMouseState state = GetRouteMouseState(route);
+            state.WheelX = horizontal;
+            state.WheelY = vertical;
+            state.WheelSync = true;
+        }
+
+        private void FlushRelativeRoute(MouseOutputRoute route, RelativeRouteMouseState state)
+        {
+            if (state.X != 0.0 || state.Y != 0.0)
+            {
+                if ((state.X > 0.0 && state.XRemainder > 0.0) || (state.X < 0.0 && state.XRemainder < 0.0))
+                {
+                    state.X += state.XRemainder;
+                }
+                else
+                {
+                    state.XRemainder = 0.0;
+                }
+
+                if ((state.Y > 0.0 && state.YRemainder > 0.0) || (state.Y < 0.0 && state.YRemainder < 0.0))
+                {
+                    state.Y += state.YRemainder;
+                }
+                else
+                {
+                    state.YRemainder = 0.0;
+                }
+
+                double mouseXTemp = state.X - (remainderCutoff(state.X * 100.0, 1.0) / 100.0);
+                int mouseXInt = (int)mouseXTemp;
+                state.XRemainder = mouseXTemp - mouseXInt;
+
+                double mouseYTemp = state.Y - (remainderCutoff(state.Y * 100.0, 1.0) / 100.0);
+                int mouseYInt = (int)mouseYTemp;
+                state.YRemainder = mouseYTemp - mouseYInt;
+
+                if (mouseOutputDispatcher != null)
+                {
+                    mouseOutputDispatcher.QueueRelative(mouseOutputProducerId, route, mouseXInt, mouseYInt);
+                }
+                else
+                {
+                    eventInputHandler.MoveRelativeMouse(mouseXInt, mouseYInt);
+                }
+            }
+            else
+            {
+                state.XRemainder = 0.0;
+                state.YRemainder = 0.0;
+            }
+
+            state.X = 0.0;
+            state.Y = 0.0;
+            state.Sync = false;
+        }
+
+        public void ResetRouteMouseRemainder(MouseOutputRoute route)
+        {
+            RelativeRouteMouseState state = GetRouteMouseState(route);
+            state.XRemainder = 0.0;
+            state.YRemainder = 0.0;
+        }
+
+        internal bool TryGetRouteMouseStateForTest(MouseOutputRoute route,
+            out RouteMouseStateSnapshot snapshot)
+        {
+            if (routeMouseStates.TryGetValue(route, out RelativeRouteMouseState state))
+            {
+                snapshot = new RouteMouseStateSnapshot(state.X, state.Y, state.Sync,
+                    state.XRemainder, state.YRemainder, state.WheelX, state.WheelY,
+                    state.WheelSync);
+                return true;
+            }
+
+            snapshot = default;
+            return false;
+        }
+
+        internal void FlushQueuedMouseOutputForTest()
+        {
+            ProcessSyncEvents();
+        }
 
         public virtual ref TouchEventFrame GetPreviousTouchEventFrame(TouchpadActionCodes padID)
         {
@@ -1662,25 +1857,21 @@ namespace DS4MapperTest
                         switch (actionData.OutputCode)
                         {
                             case 1: // Wheel Up
-                                    //vWheel = 120;
                                 vWheel = (int)(1 * absValue);
                                 mouseWheelY = vWheel;
                                 mouseWheelSync = true;
                                 break;
                             case 2: // Wheel Down
-                                    //vWheel = -120;
                                 vWheel = (int)(-1 * absValue);
                                 mouseWheelY = vWheel;
                                 mouseWheelSync = true;
                                 break;
                             case 3: // Wheel Left
-                                    //hWheel = 120;
                                 hWheel = (int)(1 * absValue);
                                 mouseWheelX = hWheel;
                                 mouseWheelSync = true;
                                 break;
                             case 4: // Wheel Right
-                                    //hWheel = -120;
                                 hWheel = (int)(-1 * absValue);
                                 mouseWheelX = hWheel;
                                 mouseWheelSync = true;
@@ -1689,8 +1880,6 @@ namespace DS4MapperTest
                                 break;
                         }
 
-                        //fakerInputHandler.PerformMouseWheelEvent(vWheel, hWheel);
-                        //InputMethods.MouseWheel(vWheel, hWheel);
                         actionData.activatedEvent = true;
                     }
                     else if (!pressed)
@@ -1747,17 +1936,15 @@ namespace DS4MapperTest
                             if (xDir)
                             {
                                 double xMotion = ((mouseVelocity - tempMouseOffset) * timeDelta * distance + (mouseOffset * timeDelta));
-                                MouseX = xMotion;
-                                MouseSync = true;
+                                AddRouteRelativeMouseMotion(MouseOutputRoute.Gyro, xMotion, 0.0);
+                                SetRouteRelativeMouseSync(MouseOutputRoute.Gyro, true);
                             }
                             else if (yDir)
                             {
                                 double yMotion = ((mouseVelocity - tempMouseOffset) * timeDelta * distance + (mouseOffset * timeDelta));
-                                MouseY = yMotion;
-                                MouseSync = true;
+                                AddRouteRelativeMouseMotion(MouseOutputRoute.Gyro, 0.0, yMotion);
+                                SetRouteRelativeMouseSync(MouseOutputRoute.Gyro, true);
                             }
-                            //xMotion = ((mouseVelocity - tempMouseOffsetX) * timeDelta * absXNorm + (tempMouseOffsetX * timeDelta)) * xSign;
-                            //yMotion = ((mouseVelocity - tempMouseOffsetY) * timeDelta * absYNorm + (tempMouseOffsetY * timeDelta)) * -ySign;
                         }
                     }
 
@@ -1780,25 +1967,21 @@ namespace DS4MapperTest
                             switch (actionData.OutputCode)
                             {
                                 case 1: // Wheel Up
-                                        //vWheel = 120;
                                     vWheel = 1;
                                     mouseWheelY = vWheel;
                                     mouseWheelSync = true;
                                     break;
                                 case 2: // Wheel Down
-                                        //vWheel = -120;
                                     vWheel = -1;
                                     mouseWheelY = vWheel;
                                     mouseWheelSync = true;
                                     break;
                                 case 3: // Wheel Left
-                                        //hWheel = 120;
                                     hWheel = 1;
                                     mouseWheelX = hWheel;
                                     mouseWheelSync = true;
                                     break;
                                 case 4: // Wheel Right
-                                        //hWheel = -120;
                                     hWheel = -1;
                                     mouseWheelX = hWheel;
                                     mouseWheelSync = true;
@@ -1807,8 +1990,6 @@ namespace DS4MapperTest
                                     break;
                             }
 
-                            //fakerInputHandler.PerformMouseWheelEvent(vWheel, hWheel);
-                            //InputMethods.MouseWheel(vWheel, hWheel);
                             actionData.activatedEvent = true;
                         }
                         else if (!pressed)
@@ -1850,7 +2031,7 @@ namespace DS4MapperTest
                             case MouseButtonCodes.MOUSE_XBUTTON2:
                                 if (pressed)
                                 {
-                                    if (!currentMouseButtons.Contains(actionData.OutputCode))
+                                    if (!actionData.activatedEvent)
                                     {
                                         activeMouseButtons.Add(actionData.OutputCode);
                                         actionData.activatedEvent = true;
@@ -1858,7 +2039,7 @@ namespace DS4MapperTest
                                 }
                                 else
                                 {
-                                    if (currentMouseButtons.Contains(actionData.OutputCode))
+                                    if (actionData.activatedEvent)
                                     {
                                         releasedMouseButtons.Add(actionData.OutputCode);
                                         actionData.activatedEvent = false;
@@ -1919,24 +2100,21 @@ namespace DS4MapperTest
                             if (xDir)
                             {
                                 double xMotion = ((mouseVelocity - tempMouseOffset) * timeDelta * distance + (mouseOffset * timeDelta));
-                                MouseX = xMotion;
-                                MouseSync = true;
+                                AddRouteRelativeMouseMotion(MouseOutputRoute.Gyro, xMotion, 0.0);
+                                SetRouteRelativeMouseSync(MouseOutputRoute.Gyro, true);
                             }
                             else if (yDir)
                             {
                                 double yMotion = ((mouseVelocity - tempMouseOffset) * timeDelta * distance + (mouseOffset * timeDelta));
-                                MouseY = yMotion;
-                                MouseSync = true;
+                                AddRouteRelativeMouseMotion(MouseOutputRoute.Gyro, 0.0, yMotion);
+                                SetRouteRelativeMouseSync(MouseOutputRoute.Gyro, true);
                             }
-                            //xMotion = ((mouseVelocity - tempMouseOffsetX) * timeDelta * absXNorm + (tempMouseOffsetX * timeDelta)) * xSign;
-                            //yMotion = ((mouseVelocity - tempMouseOffsetY) * timeDelta * absYNorm + (tempMouseOffsetY * timeDelta)) * -ySign;
                         }
                     }
 
                     break;
                 case OutputActionData.ActionType.GamepadControl:
                     {
-                        //actionData.activatedEvent = pressed;
                         GamepadFromAxisInput(actionData, outputNorm);
                     }
 
@@ -1992,7 +2170,7 @@ namespace DS4MapperTest
                             case MouseButtonCodes.MOUSE_XBUTTON2:
                                 if (pressed)
                                 {
-                                    if (!currentMouseButtons.Contains(actionData.OutputCode))
+                                    if (!actionData.activatedEvent)
                                     {
                                         activeMouseButtons.Add(actionData.OutputCode);
                                         actionData.activatedEvent = true;
@@ -2000,7 +2178,7 @@ namespace DS4MapperTest
                                 }
                                 else
                                 {
-                                    if (currentMouseButtons.Contains(actionData.OutputCode))
+                                    if (actionData.activatedEvent)
                                     {
                                         releasedMouseButtons.Add(actionData.OutputCode);
                                         actionData.activatedEvent = false;
@@ -2022,25 +2200,21 @@ namespace DS4MapperTest
                             switch (actionData.OutputCode)
                             {
                                 case 1: // Wheel Up
-                                        //vWheel = 120;
                                     vWheel = 1;
                                     mouseWheelY = vWheel;
                                     mouseWheelSync = true;
                                     break;
                                 case 2: // Wheel Down
-                                        //vWheel = -120;
                                     vWheel = -1;
                                     mouseWheelY = vWheel;
                                     mouseWheelSync = true;
                                     break;
                                 case 3: // Wheel Left
-                                        //hWheel = 120;
                                     hWheel = 1;
                                     mouseWheelX = hWheel;
                                     mouseWheelSync = true;
                                     break;
                                 case 4: // Wheel Right
-                                        //hWheel = -120;
                                     hWheel = -1;
                                     mouseWheelX = hWheel;
                                     mouseWheelSync = true;
@@ -2049,8 +2223,6 @@ namespace DS4MapperTest
                                     break;
                             }
 
-                            //fakerInputHandler.PerformMouseWheelEvent(vWheel, hWheel);
-                            //InputMethods.MouseWheel(vWheel, hWheel);
                             actionData.activatedEvent = true;
                         }
                         else if (!pressed)
@@ -2108,18 +2280,16 @@ namespace DS4MapperTest
                             if (xDir)
                             {
                                 double xMotion = ((mouseXVelocity - mouseXOffset) * timeDelta * distance + (mouseXOffset * timeDelta));
-                                MouseX = xMotion;
-                                MouseSync = true;
+                                AddRouteRelativeMouseMotion(MouseOutputRoute.Gyro, xMotion, 0.0);
+                                SetRouteRelativeMouseSync(MouseOutputRoute.Gyro, true);
                             }
 
                             if (yDir)
                             {
                                 double yMotion = ((mouseYVelocity - mouseYOffset) * timeDelta * distance + (mouseYOffset * timeDelta));
-                                MouseY = yMotion;
-                                MouseSync = true;
+                                AddRouteRelativeMouseMotion(MouseOutputRoute.Gyro, 0.0, yMotion);
+                                SetRouteRelativeMouseSync(MouseOutputRoute.Gyro, true);
                             }
-                            //xMotion = ((mouseVelocity - tempMouseOffsetX) * timeDelta * absXNorm + (tempMouseOffsetX * timeDelta)) * xSign;
-                            //yMotion = ((mouseVelocity - tempMouseOffsetY) * timeDelta * absYNorm + (tempMouseOffsetY * timeDelta)) * -ySign;
                         }
                     }
 
@@ -2148,20 +2318,6 @@ namespace DS4MapperTest
                     }
 
                     break;
-                //case OutputActionData.ActionType.SwitchActionLayer:
-                //    actionData.activatedEvent = pressed;
-                //    if (pressed)
-                //    {
-                //        queuedActionLayer = actionData.ChangeToLayer;
-                //    }
-                //    else
-                //    {
-                //        // Revert to default layer
-                //        queuedActionLayer = 0;
-                //    }
-
-                //    break;
-
                 case OutputActionData.ActionType.SwitchActionLayer:
                     actionData.activatedEvent = pressed;
                     if (pressed)
@@ -2187,12 +2343,10 @@ namespace DS4MapperTest
                 case OutputActionData.ActionType.ApplyActionLayer:
                     OutputActionData.ActionLayerChangeCondition layerApplyCond = actionData.LayerChangeCondition;
                     actionData.activatedEvent = pressed;
-                    //Trace.WriteLine("Change Action Layer {0}", actionData.ChangeToLayer.ToString());
                     if (pressed)
                     {
                         if (layerApplyCond == OutputActionData.ActionLayerChangeCondition.Pressed)
                         {
-                            Trace.WriteLine($"Add Action Layer {actionData.ChangeToLayer}");
                             queuedActionLayer = actionData.ChangeToLayer;
                             applyQueuedActionLayer = true;
                         }
@@ -2210,13 +2364,10 @@ namespace DS4MapperTest
                 case OutputActionData.ActionType.RemoveActionLayer:
                     OutputActionData.ActionLayerChangeCondition layerRemoveCond = actionData.LayerChangeCondition;
                     actionData.activatedEvent = pressed;
-                    //Trace.WriteLine("Remove Action Layer {0}", "0");
                     if (pressed)
                     {
                         if (layerRemoveCond == OutputActionData.ActionLayerChangeCondition.Pressed)
                         {
-                            Trace.WriteLine("Removing Action Layer");
-                            //queuedActionLayer = ActionSet.DEFAULT_ACTION_LAYER_INDEX;
                             queuedActionLayer = actionData.ChangeToLayer;
                             applyQueuedActionLayer = false;
                         }
@@ -2225,9 +2376,6 @@ namespace DS4MapperTest
                     {
                         if (layerRemoveCond == OutputActionData.ActionLayerChangeCondition.Released)
                         {
-                            Trace.WriteLine("Removing Action Layer");
-                            //queuedActionLayer = ActionSet.DEFAULT_ACTION_LAYER_INDEX;
-                            //queuedActionLayer = actionProfile.CurrentActionSet.CurrentActionLayer.Index;
                             queuedActionLayer = actionData.ChangeToLayer;
                             applyQueuedActionLayer = false;
                         }
@@ -2235,14 +2383,10 @@ namespace DS4MapperTest
 
                     break;
                 case OutputActionData.ActionType.HoldActionLayer:
-                    //actionData.activatedEvent = pressed;
-                    //Trace.WriteLine("Remove Action Layer {0}", "0");
                     if (pressed)
                     {
                         if (!actionData.activatedEvent)
-                        //if (!actionData.waitForRelease)
                         {
-                            Trace.WriteLine($"Hold Action Layer {actionData.ChangeToLayer}");
                             actionData.activatedEvent = true;
                             queuedActionLayer = actionData.ChangeToLayer;
                             applyQueuedActionLayer = true;
@@ -2253,13 +2397,9 @@ namespace DS4MapperTest
                     }
                     else if (!pressed)
                     {
-                        //if (actionData.activatedEvent && fullRelease)
                         if (actionData.activatedEvent)
-                        //if (!actionData.skipRelease && actionData.waitForRelease)
                         {
-                            Trace.WriteLine($"Release Action Layer");
                             actionData.activatedEvent = false;
-                            //queuedActionLayer = ActionSet.DEFAULT_ACTION_LAYER_INDEX;
                             queuedActionLayer = actionData.ChangeToLayer;
                             applyQueuedActionLayer = false;
                             actionData.waitForRelease = false;
@@ -2276,6 +2416,50 @@ namespace DS4MapperTest
                             if (!actionData.activatedEvent)
                             {
                                 ActivateCycle(actionData.cycleStepAct.cycleId, actionData.cycleStepAct);
+                                actionData.activatedEvent = true;
+                            }
+                        }
+                        else
+                        {
+                            actionData.activatedEvent = false;
+                        }
+                    }
+
+                    break;
+                case OutputActionData.ActionType.CameraTurn:
+                    {
+                        if (pressed && !actionData.cameraTurnActive)
+                        {
+                            // On first press: commit the full flick to the pending queue.
+                            // ProcessSyncEvents drives it to completion every tick regardless
+                            // of whether the button is still held.
+                            double durationSec = actionData.cameraTurnDurationMs / 1000.0;
+                            double totalCounts = (actionData.cameraTurnAngle / 360.0) * actionData.cameraTurnCounts360;
+                            pendingFlicks.Add(new PendingFlick
+                            {
+                                totalCounts = totalCounts,
+                                duration = durationSec,
+                                elapsed = 0.0,
+                                lastProgress = 0.0,
+                            });
+                            actionData.cameraTurnActive = true;
+                            actionData.activatedEvent = true;
+                        }
+                        else if (!pressed)
+                        {
+                            actionData.activatedEvent = false;
+                            actionData.cameraTurnActive = false;
+                        }
+                    }
+
+                    break;
+                case OutputActionData.ActionType.RecalibrateGyro:
+                    {
+                        if (pressed)
+                        {
+                            if (!actionData.activatedEvent)
+                            {
+                                BaseReader?.RequestGyroCalibration();
                                 actionData.activatedEvent = true;
                             }
                         }
@@ -2353,6 +2537,22 @@ namespace DS4MapperTest
             this.viiperServerHandle = serverHandle;
         }
 
+        public virtual void PassMouseOutputDispatcher(MouseOutputDispatcher dispatcher)
+        {
+            if (mouseOutputDispatcher != null &&
+                !mouseOutputProducerId.Equals(default(MouseOutputProducerId)))
+            {
+                mouseOutputDispatcher.UnregisterProducer(mouseOutputProducerId);
+            }
+
+            mouseOutputDispatcher = dispatcher;
+            mouseOutputProducerId = default;
+            if (mouseOutputDispatcher != null)
+            {
+                mouseOutputProducerId = mouseOutputDispatcher.RegisterProducer();
+            }
+        }
+
         public virtual void Start(VirtualKBMBase fakerInputHandler, VirtualKBMMapping eventInputMapping)
         {
             this.eventInputHandler = fakerInputHandler;
@@ -2377,140 +2577,379 @@ namespace DS4MapperTest
             }
         }
 
+        protected const ushort NS2PRO_STICK_MIN = 0x0000;
+        protected const ushort NS2PRO_STICK_CENTER = 0x0800;
+        protected const ushort NS2PRO_STICK_MAX = 0x0FFF;
+
         Xbox360DeviceState xboxState = new Xbox360DeviceState();
         DS4DeviceState ds4State = new DS4DeviceState();
+        DSDeviceState dualSenseState = new DSDeviceState();
+        NS2ProDeviceState ns2ProState = new NS2ProDeviceState();
 
         protected void PopulateXbox()
         {
-            unchecked
+            lock (viiperDeviceLock)
             {
-                ushort tempButtons = 0;
-                if (intermediateState.BtnSouth) tempButtons |= Xbox360Button.A;
-                if (intermediateState.BtnEast) tempButtons |= Xbox360Button.B;
-                if (intermediateState.BtnWest) tempButtons |= Xbox360Button.X;
-                if (intermediateState.BtnNorth) tempButtons |= Xbox360Button.Y;
-                if (intermediateState.BtnStart) tempButtons |= Xbox360Button.Start;
-                if (intermediateState.BtnSelect) tempButtons |= Xbox360Button.Back;
-
-                if (intermediateState.BtnLShoulder) tempButtons |= Xbox360Button.LeftShoulder;
-                if (intermediateState.BtnRShoulder) tempButtons |= Xbox360Button.RightShoulder;
-                if (intermediateState.BtnMode) tempButtons |= Xbox360Button.Guide;
-
-                if (intermediateState.BtnThumbL) tempButtons |= Xbox360Button.LeftThumb;
-                if (intermediateState.BtnThumbR) tempButtons |= Xbox360Button.RightThumb;
-
-                if (intermediateState.DpadUp) tempButtons |= Xbox360Button.Up;
-                if (intermediateState.DpadDown) tempButtons |= Xbox360Button.Down;
-                if (intermediateState.DpadLeft) tempButtons |= Xbox360Button.Left;
-                if (intermediateState.DpadRight) tempButtons |= Xbox360Button.Right;
-
-                /*var state = new Xbox360DeviceState
+                if (!IsPlausibleViiperDeviceHandle(deviceHandle))
                 {
-                    Buttons = tempButtons,
-                    //LT = (byte)Math.Clamp(rawL2 / 128, 0, 255),
-                    //RT = (byte)Math.Clamp(rawR2 / 128, 0, 255),
-                    LX = (short)(intermediateState.LX * (intermediateState.LX >= 0 ? X360_STICK_MAX : -X360_STICK_MIN)),
-                    //BitConverter.ToInt16(buffer, 10),
-                    LY = (short)(intermediateState.LY * (intermediateState.LY >= 0 ? X360_STICK_MAX : -X360_STICK_MIN)),
-                    //(short)BitConverter.ToInt16(buffer, 12),
-                    //RX = BitConverter.ToInt16(buffer, 14),
-                    //RY = (short)BitConverter.ToInt16(buffer, 16)
-                };
-                */
-                xboxState.Buttons = tempButtons;
-                xboxState.LX = (short)(intermediateState.LX * (intermediateState.LX >= 0 ? X360_STICK_MAX : -X360_STICK_MIN));
-                xboxState.LY = (short)(intermediateState.LY * (intermediateState.LY >= 0 ? X360_STICK_MAX : -X360_STICK_MIN));
-                xboxState.RX = (short)(intermediateState.RX * (intermediateState.RX >= 0 ? X360_STICK_MAX : -X360_STICK_MIN));
-                xboxState.RY = (short)(intermediateState.RY * (intermediateState.RY >= 0 ? X360_STICK_MAX : -X360_STICK_MIN));
-                xboxState.LT = (byte)(intermediateState.LTrigger * 255);
-                xboxState.RT = (byte)(intermediateState.RTrigger * 255);
+                    deviceHandle = 0;
+                    outputControlType = OutputContType.None;
+                    viiperBusId = 0;
+                    return;
+                }
 
-                LibVIIPER.SetXbox360DeviceState(deviceHandle, xboxState);
+                unchecked
+                {
+                    ushort tempButtons = 0;
+                    if (intermediateState.BtnSouth) tempButtons |= Xbox360Button.A;
+                    if (intermediateState.BtnEast) tempButtons |= Xbox360Button.B;
+                    if (intermediateState.BtnWest) tempButtons |= Xbox360Button.X;
+                    if (intermediateState.BtnNorth) tempButtons |= Xbox360Button.Y;
+                    if (intermediateState.BtnStart) tempButtons |= Xbox360Button.Start;
+                    if (intermediateState.BtnSelect) tempButtons |= Xbox360Button.Back;
+                    if (intermediateState.BtnLShoulder) tempButtons |= Xbox360Button.LeftShoulder;
+                    if (intermediateState.BtnRShoulder) tempButtons |= Xbox360Button.RightShoulder;
+                    if (intermediateState.BtnMode) tempButtons |= Xbox360Button.Guide;
+
+                    if (intermediateState.BtnThumbL) tempButtons |= Xbox360Button.LeftThumb;
+                    if (intermediateState.BtnThumbR) tempButtons |= Xbox360Button.RightThumb;
+
+                    if (intermediateState.DpadUp) tempButtons |= Xbox360Button.Up;
+                    if (intermediateState.DpadDown) tempButtons |= Xbox360Button.Down;
+                    if (intermediateState.DpadLeft) tempButtons |= Xbox360Button.Left;
+                    if (intermediateState.DpadRight) tempButtons |= Xbox360Button.Right;
+
+                    xboxState.Buttons = tempButtons;
+                    xboxState.LX = (short)(intermediateState.LX * (intermediateState.LX >= 0 ? X360_STICK_MAX : -X360_STICK_MIN));
+                    xboxState.LY = (short)(intermediateState.LY * (intermediateState.LY >= 0 ? X360_STICK_MAX : -X360_STICK_MIN));
+                    xboxState.RX = (short)(intermediateState.RX * (intermediateState.RX >= 0 ? X360_STICK_MAX : -X360_STICK_MIN));
+                    xboxState.RY = (short)(intermediateState.RY * (intermediateState.RY >= 0 ? X360_STICK_MAX : -X360_STICK_MIN));
+                    xboxState.LT = (byte)(intermediateState.LTrigger * 255);
+                    xboxState.RT = (byte)(intermediateState.RTrigger * 255);
+
+                    LibVIIPER.SetXbox360DeviceState(deviceHandle, xboxState);
+                    if (!loggedFirstVirtualState)
+                    {
+                        logger.Info($"Submitted first Xbox 360 state. Handle={deviceHandle} Buttons=0x{xboxState.Buttons:X4} LT={xboxState.LT} RT={xboxState.RT}");
+                        loggedFirstVirtualState = true;
+                    }
+                }
             }
         }
 
         protected void PopulateDualShock4()
         {
-            unchecked
+            lock (viiperDeviceLock)
             {
-                ushort tempButtons = 0;
-                //DualShock4DPadDirection tempDPad = DualShock4DPadDirection.None;
-                VIIPERDPadDir tempDPad = 0;
-                if (intermediateState.BtnSouth) tempButtons |= DS4Button.Cross;
-                if (intermediateState.BtnEast) tempButtons |= DS4Button.Circle;
-                if (intermediateState.BtnWest) tempButtons |= DS4Button.Square;
-                if (intermediateState.BtnNorth) tempButtons |= DS4Button.Triangle;
-                if (intermediateState.BtnStart) tempButtons |= DS4Button.Options;
-                if (intermediateState.BtnSelect) tempButtons |= DS4Button.Share;
+                if (!IsPlausibleViiperDeviceHandle(deviceHandle))
+                {
+                    deviceHandle = 0;
+                    outputControlType = OutputContType.None;
+                    viiperBusId = 0;
+                    return;
+                }
 
-                if (intermediateState.BtnLShoulder) tempButtons |= DS4Button.ShoulderLeft;
-                if (intermediateState.BtnRShoulder) tempButtons |= DS4Button.ShoulderRight;
-                if (intermediateState.LTrigger > 0) tempButtons |= DS4Button.TriggerLeft;
-                if (intermediateState.RTrigger > 0) tempButtons |= DS4Button.TriggerRight;
+                unchecked
+                {
+                    ushort tempButtons = 0;
+                    VIIPERDPadDir tempDPad = 0;
+                    if (intermediateState.BtnSouth) tempButtons |= DS4Button.Cross;
+                    if (intermediateState.BtnEast) tempButtons |= DS4Button.Circle;
+                    if (intermediateState.BtnWest) tempButtons |= DS4Button.Square;
+                    if (intermediateState.BtnNorth) tempButtons |= DS4Button.Triangle;
+                    if (intermediateState.BtnStart) tempButtons |= DS4Button.Options;
+                    if (intermediateState.BtnSelect) tempButtons |= DS4Button.Share;
 
-                if (intermediateState.BtnThumbL) tempButtons |= DS4Button.ThumbLeft;
-                if (intermediateState.BtnThumbR) tempButtons |= DS4Button.ThumbRight;
+                    if (intermediateState.BtnLShoulder) tempButtons |= DS4Button.ShoulderLeft;
+                    if (intermediateState.BtnRShoulder) tempButtons |= DS4Button.ShoulderRight;
+                    if (intermediateState.LTrigger > 0) tempButtons |= DS4Button.TriggerLeft;
+                    if (intermediateState.RTrigger > 0) tempButtons |= DS4Button.TriggerRight;
 
-                if (intermediateState.DpadUp && intermediateState.DpadRight) tempDPad = VIIPERDPadDir.PadUp | VIIPERDPadDir.PadRight;
-                else if (intermediateState.DpadUp && intermediateState.DpadLeft) tempDPad = VIIPERDPadDir.PadUp | VIIPERDPadDir.PadLeft;
-                else if (intermediateState.DpadUp) tempDPad = VIIPERDPadDir.PadUp;
-                else if (intermediateState.DpadRight && intermediateState.DpadDown) tempDPad = VIIPERDPadDir.PadDown | VIIPERDPadDir.PadRight;
-                else if (intermediateState.DpadRight) tempDPad = VIIPERDPadDir.PadRight;
-                else if (intermediateState.DpadDown && intermediateState.DpadLeft) tempDPad = VIIPERDPadDir.PadDown | VIIPERDPadDir.PadLeft;
-                else if (intermediateState.DpadDown) tempDPad = VIIPERDPadDir.PadDown;
-                else if (intermediateState.DpadLeft) tempDPad = VIIPERDPadDir.PadLeft;
+                    if (intermediateState.BtnThumbL) tempButtons |= DS4Button.ThumbLeft;
+                    if (intermediateState.BtnThumbR) tempButtons |= DS4Button.ThumbRight;
 
-                if (intermediateState.BtnMode) tempButtons |= DS4Button.Ps;
-                if (intermediateState.BtnTouchClick) tempButtons |= DS4Button.Touchpad;
+                    if (intermediateState.DpadUp && intermediateState.DpadRight) tempDPad = VIIPERDPadDir.PadUp | VIIPERDPadDir.PadRight;
+                    else if (intermediateState.DpadUp && intermediateState.DpadLeft) tempDPad = VIIPERDPadDir.PadUp | VIIPERDPadDir.PadLeft;
+                    else if (intermediateState.DpadUp) tempDPad = VIIPERDPadDir.PadUp;
+                    else if (intermediateState.DpadRight && intermediateState.DpadDown) tempDPad = VIIPERDPadDir.PadDown | VIIPERDPadDir.PadRight;
+                    else if (intermediateState.DpadRight) tempDPad = VIIPERDPadDir.PadRight;
+                    else if (intermediateState.DpadDown && intermediateState.DpadLeft) tempDPad = VIIPERDPadDir.PadDown | VIIPERDPadDir.PadLeft;
+                    else if (intermediateState.DpadDown) tempDPad = VIIPERDPadDir.PadDown;
+                    else if (intermediateState.DpadLeft) tempDPad = VIIPERDPadDir.PadLeft;
 
-                ds4State.Buttons = tempButtons;
-                ds4State.Dpad = (byte)tempDPad;
+                    if (intermediateState.BtnMode) tempButtons |= DS4Button.Ps;
+                    if (intermediateState.BtnTouchClick) tempButtons |= DS4Button.Touchpad;
 
+                    ds4State.Buttons = tempButtons;
+                    ds4State.Dpad = (byte)tempDPad;
+                }
 
-                //byte frameCounter = (byte)(intermediateState.PacketCounter % 128);
-                // Frame counter is high 6 bits. Low 2 bits is for extra buttons (PS, TP Click)
-                //ds4State.Dpad = (byte)(tempSpecial | (frameCounter << 2));
-                //outDS4Report.bSpecial = (byte)(tempSpecial | (frameCounter << 2));
-                //outDS4Report.wButtons |= tempDPad.Value;
+                ds4State.Sticklx = (sbyte)((intermediateState.LX >= 0 ? (DS4_STICK_MAX - DS4_STICK_MID) : -(DS4_STICK_MIN - DS4_STICK_MID)) * intermediateState.LX);
+                ds4State.Stickly = (sbyte)((intermediateState.LY >= 0 ? -(DS4_STICK_MIN - DS4_STICK_MID) : (DS4_STICK_MAX - DS4_STICK_MID)) * -intermediateState.LY);
+                ds4State.Stickrx = (sbyte)((intermediateState.RX >= 0 ? (DS4_STICK_MAX - DS4_STICK_MID) : -(DS4_STICK_MIN - DS4_STICK_MID)) * intermediateState.RX);
+                ds4State.Stickry = (sbyte)((intermediateState.RY >= 0 ? -(DS4_STICK_MIN - DS4_STICK_MID) : (DS4_STICK_MAX - DS4_STICK_MID)) * -intermediateState.RY);
+
+                ds4State.Triggerl2 = (byte)(intermediateState.LTrigger * 255);
+                ds4State.Triggerr2 = (byte)(intermediateState.RTrigger * 255);
+                ds4State.Touch1x = ScaleTouchAxis(intermediateState.Touch1XNorm, DS4Library.DS4State.TouchInfo.TOUCHPAD_MAX_X);
+                ds4State.Touch1y = ScaleTouchAxis(intermediateState.Touch1YNorm, DS4Library.DS4State.TouchInfo.TOUCHPAD_MAX_Y);
+                ds4State.Touch1active = (byte)(intermediateState.Touch1Active ? 1 : 0);
+                ds4State.Touch2x = ScaleTouchAxis(intermediateState.Touch2XNorm, DS4Library.DS4State.TouchInfo.TOUCHPAD_MAX_X);
+                ds4State.Touch2y = ScaleTouchAxis(intermediateState.Touch2YNorm, DS4Library.DS4State.TouchInfo.TOUCHPAD_MAX_Y);
+                ds4State.Touch2active = (byte)(intermediateState.Touch2Active ? 1 : 0);
+                ds4State.Gyrox = intermediateState.GyroYaw;
+                ds4State.Gyroy = intermediateState.GyroPitch;
+                ds4State.Gyroz = intermediateState.GyroRoll;
+                ds4State.Accelx = intermediateState.AccelX;
+                ds4State.Accely = intermediateState.AccelY;
+                ds4State.Accelz = intermediateState.AccelZ;
+
+                LibVIIPER.SetDS4DeviceState(deviceHandle, ds4State);
+                if (!loggedFirstVirtualState)
+                {
+                    logger.Info($"Submitted first DS4 state. Handle={deviceHandle} Buttons=0x{ds4State.Buttons:X4} L2={ds4State.Triggerl2} R2={ds4State.Triggerr2}");
+                    loggedFirstVirtualState = true;
+                }
             }
-
-            ds4State.Sticklx = (sbyte)((intermediateState.LX >= 0 ? (DS4_STICK_MAX - DS4_STICK_MID) : -(DS4_STICK_MIN - DS4_STICK_MID)) * intermediateState.LX);
-            ds4State.Stickly = (sbyte)((intermediateState.LY >= 0 ? -(DS4_STICK_MIN - DS4_STICK_MID) : (DS4_STICK_MAX - DS4_STICK_MID)) * -intermediateState.LY);
-            ds4State.Stickrx = (sbyte)((intermediateState.RX >= 0 ? (DS4_STICK_MAX - DS4_STICK_MID) : -(DS4_STICK_MIN - DS4_STICK_MID)) * intermediateState.RX);
-            ds4State.Stickry = (sbyte)((intermediateState.RY >= 0 ? -(DS4_STICK_MIN - DS4_STICK_MID) : (DS4_STICK_MAX - DS4_STICK_MID)) * -intermediateState.RY);
-
-            ds4State.Triggerl2 = (byte)(intermediateState.LTrigger * 255);
-            ds4State.Triggerr2 = (byte)(intermediateState.RTrigger * 255);
-
-            ds4State.Gyrox = intermediateState.GyroYaw;
-            ds4State.Gyroy = intermediateState.GyroPitch;
-            ds4State.Gyroz = intermediateState.GyroRoll;
-            ds4State.Accelx = intermediateState.AccelX;
-            ds4State.Accely = intermediateState.AccelY;
-            ds4State.Accelz = intermediateState.AccelZ;
-
-            LibVIIPER.SetDS4DeviceState(deviceHandle, ds4State);
 
             intermediateState.PacketCounter = intermediateState.PacketCounter + 1;
         }
 
+        protected void PopulateDualSense()
+        {
+            lock (viiperDeviceLock)
+            {
+                if (!IsPlausibleViiperDeviceHandle(deviceHandle))
+                {
+                    deviceHandle = 0;
+                    outputControlType = OutputContType.None;
+                    viiperBusId = 0;
+                    return;
+                }
+
+                unchecked
+                {
+                    uint tempButtons = 0;
+                    VIIPERDPadDir tempDPad = 0;
+                    if (intermediateState.BtnSouth) tempButtons |= DualSenseButton.Cross;
+                    if (intermediateState.BtnEast) tempButtons |= DualSenseButton.Circle;
+                    if (intermediateState.BtnWest) tempButtons |= DualSenseButton.Square;
+                    if (intermediateState.BtnNorth) tempButtons |= DualSenseButton.Triangle;
+                    if (intermediateState.BtnStart) tempButtons |= DualSenseButton.Options;
+                    if (intermediateState.BtnSelect) tempButtons |= DualSenseButton.Create;
+
+                    if (intermediateState.BtnLShoulder) tempButtons |= DualSenseButton.ShoulderLeft;
+                    if (intermediateState.BtnRShoulder) tempButtons |= DualSenseButton.ShoulderRight;
+                    if (intermediateState.LTrigger > 0) tempButtons |= DualSenseButton.TriggerLeft;
+                    if (intermediateState.RTrigger > 0) tempButtons |= DualSenseButton.TriggerRight;
+
+                    if (intermediateState.BtnThumbL) tempButtons |= DualSenseButton.ThumbLeft;
+                    if (intermediateState.BtnThumbR) tempButtons |= DualSenseButton.ThumbRight;
+
+                    if (intermediateState.DpadUp && intermediateState.DpadRight) tempDPad = VIIPERDPadDir.PadUp | VIIPERDPadDir.PadRight;
+                    else if (intermediateState.DpadUp && intermediateState.DpadLeft) tempDPad = VIIPERDPadDir.PadUp | VIIPERDPadDir.PadLeft;
+                    else if (intermediateState.DpadUp) tempDPad = VIIPERDPadDir.PadUp;
+                    else if (intermediateState.DpadRight && intermediateState.DpadDown) tempDPad = VIIPERDPadDir.PadDown | VIIPERDPadDir.PadRight;
+                    else if (intermediateState.DpadRight) tempDPad = VIIPERDPadDir.PadRight;
+                    else if (intermediateState.DpadDown && intermediateState.DpadLeft) tempDPad = VIIPERDPadDir.PadDown | VIIPERDPadDir.PadLeft;
+                    else if (intermediateState.DpadDown) tempDPad = VIIPERDPadDir.PadDown;
+                    else if (intermediateState.DpadLeft) tempDPad = VIIPERDPadDir.PadLeft;
+
+                    if (intermediateState.BtnMode) tempButtons |= DualSenseButton.Ps;
+                    if (intermediateState.BtnTouchClick) tempButtons |= DualSenseButton.Touchpad;
+                    if (outputControlType == OutputContType.DualSenseEdge)
+                    {
+                        if (intermediateState.BtnMode2) tempButtons |= DualSenseButton.LFn;
+                        if (intermediateState.BtnMode3) tempButtons |= DualSenseButton.RFn;
+                        if (intermediateState.BtnLGrip) tempButtons |= DualSenseButton.L4;
+                        if (intermediateState.BtnRGrip) tempButtons |= DualSenseButton.R4;
+                    }
+
+                    dualSenseState.Buttons = tempButtons;
+                    dualSenseState.DPad = (byte)tempDPad;
+                }
+
+                dualSenseState.LX = (sbyte)((intermediateState.LX >= 0 ? (DS4_STICK_MAX - DS4_STICK_MID) : -(DS4_STICK_MIN - DS4_STICK_MID)) * intermediateState.LX);
+                dualSenseState.LY = (sbyte)((intermediateState.LY >= 0 ? -(DS4_STICK_MIN - DS4_STICK_MID) : (DS4_STICK_MAX - DS4_STICK_MID)) * -intermediateState.LY);
+                dualSenseState.RX = (sbyte)((intermediateState.RX >= 0 ? (DS4_STICK_MAX - DS4_STICK_MID) : -(DS4_STICK_MIN - DS4_STICK_MID)) * intermediateState.RX);
+                dualSenseState.RY = (sbyte)((intermediateState.RY >= 0 ? -(DS4_STICK_MIN - DS4_STICK_MID) : (DS4_STICK_MAX - DS4_STICK_MID)) * -intermediateState.RY);
+
+                dualSenseState.L2 = (byte)(intermediateState.LTrigger * 255);
+                dualSenseState.R2 = (byte)(intermediateState.RTrigger * 255);
+                dualSenseState.Touch1X = ScaleTouchAxis(intermediateState.Touch1XNorm, DualSense.DualSenseState.TouchInfo.TOUCHPAD_MAX_X);
+                dualSenseState.Touch1Y = ScaleTouchAxis(intermediateState.Touch1YNorm, DualSense.DualSenseState.TouchInfo.TOUCHPAD_MAX_Y);
+                dualSenseState.Touch1Active = (byte)(intermediateState.Touch1Active ? 1 : 0);
+                dualSenseState.Touch2X = ScaleTouchAxis(intermediateState.Touch2XNorm, DualSense.DualSenseState.TouchInfo.TOUCHPAD_MAX_X);
+                dualSenseState.Touch2Y = ScaleTouchAxis(intermediateState.Touch2YNorm, DualSense.DualSenseState.TouchInfo.TOUCHPAD_MAX_Y);
+                dualSenseState.Touch2Active = (byte)(intermediateState.Touch2Active ? 1 : 0);
+
+                dualSenseState.GyroX = intermediateState.GyroYaw;
+                dualSenseState.GyroY = intermediateState.GyroPitch;
+                dualSenseState.GyroZ = intermediateState.GyroRoll;
+                dualSenseState.AccelX = intermediateState.AccelX;
+                dualSenseState.AccelY = intermediateState.AccelY;
+                dualSenseState.AccelZ = intermediateState.AccelZ;
+
+                LibVIIPER.SetDualSenseDeviceState(deviceHandle, dualSenseState);
+                if (!loggedFirstVirtualState)
+                {
+                    logger.Info($"Submitted first DualSense state. Handle={deviceHandle} Buttons=0x{dualSenseState.Buttons:X8} L2={dualSenseState.L2} R2={dualSenseState.R2}");
+                    loggedFirstVirtualState = true;
+                }
+            }
+
+            intermediateState.PacketCounter = intermediateState.PacketCounter + 1;
+        }
+
+        protected void PopulateSwitchPro2()
+        {
+            lock (viiperDeviceLock)
+            {
+                if (!IsPlausibleViiperDeviceHandle(deviceHandle))
+                {
+                    deviceHandle = 0;
+                    outputControlType = OutputContType.None;
+                    viiperBusId = 0;
+                    return;
+                }
+
+                unchecked
+                {
+                    uint tempButtons = 0;
+                    if (intermediateState.BtnSouth) tempButtons |= NS2ProButton.B;
+                    if (intermediateState.BtnEast) tempButtons |= NS2ProButton.A;
+                    if (intermediateState.BtnWest) tempButtons |= NS2ProButton.Y;
+                    if (intermediateState.BtnNorth) tempButtons |= NS2ProButton.X;
+                    if (intermediateState.BtnLShoulder) tempButtons |= NS2ProButton.L;
+                    if (intermediateState.BtnRShoulder) tempButtons |= NS2ProButton.R;
+                    if (intermediateState.LTrigger > 0) tempButtons |= NS2ProButton.ZL;
+                    if (intermediateState.RTrigger > 0) tempButtons |= NS2ProButton.ZR;
+                    if (intermediateState.BtnStart) tempButtons |= NS2ProButton.Plus;
+                    if (intermediateState.BtnSelect) tempButtons |= NS2ProButton.Minus;
+                    if (intermediateState.BtnThumbL) tempButtons |= NS2ProButton.LeftStick;
+                    if (intermediateState.BtnThumbR) tempButtons |= NS2ProButton.RightStick;
+                    if (intermediateState.DpadDown) tempButtons |= NS2ProButton.Down;
+                    if (intermediateState.DpadRight) tempButtons |= NS2ProButton.Right;
+                    if (intermediateState.DpadLeft) tempButtons |= NS2ProButton.Left;
+                    if (intermediateState.DpadUp) tempButtons |= NS2ProButton.Up;
+                    if (intermediateState.BtnMode) tempButtons |= NS2ProButton.Home;
+                    if (intermediateState.BtnCapture) tempButtons |= NS2ProButton.Capture;
+                    if (intermediateState.BtnLGrip) tempButtons |= NS2ProButton.GL;
+                    if (intermediateState.BtnRGrip) tempButtons |= NS2ProButton.GR;
+                    if (intermediateState.BtnMode2) tempButtons |= NS2ProButton.C;
+                    if (intermediateState.BtnMode3) tempButtons |= NS2ProButton.Headset;
+
+                    ns2ProState.Buttons = tempButtons;
+                }
+
+                ns2ProState.LX = ScaleSwitchPro2StickAxis(intermediateState.LX);
+                ns2ProState.LY = ScaleSwitchPro2StickAxis(-intermediateState.LY);
+                ns2ProState.RX = ScaleSwitchPro2StickAxis(intermediateState.RX);
+                ns2ProState.RY = ScaleSwitchPro2StickAxis(-intermediateState.RY);
+                ns2ProState.GyroX = intermediateState.GyroYaw;
+                ns2ProState.GyroY = intermediateState.GyroPitch;
+                ns2ProState.GyroZ = intermediateState.GyroRoll;
+                ns2ProState.AccelX = intermediateState.AccelX;
+                ns2ProState.AccelY = intermediateState.AccelY;
+                ns2ProState.AccelZ = intermediateState.AccelZ;
+
+                LibVIIPER.SetNS2ProDeviceState(deviceHandle, ns2ProState);
+                if (!loggedFirstVirtualState)
+                {
+                    logger.Info($"Submitted first Switch 2 Pro state. Handle={deviceHandle} Buttons=0x{ns2ProState.Buttons:X8}");
+                    loggedFirstVirtualState = true;
+                }
+            }
+        }
+
+        protected static ushort ScaleSwitchPro2StickAxis(double value)
+        {
+            value = Math.Clamp(value, -1.0, 1.0);
+            double scaled = NS2PRO_STICK_CENTER +
+                (value * (value >= 0.0
+                    ? (NS2PRO_STICK_MAX - NS2PRO_STICK_CENTER)
+                    : (NS2PRO_STICK_CENTER - NS2PRO_STICK_MIN)));
+            return (ushort)Math.Clamp((int)Math.Round(scaled), NS2PRO_STICK_MIN, NS2PRO_STICK_MAX);
+        }
+
+        protected static double ApproximateNS2ProRumbleRatio(NS2ProOutputState output, bool leftSide)
+        {
+            byte[] data = leftSide ? output.LeftRumble : output.RightRumble;
+            if (data == null || data.Length == 0)
+            {
+                return 0.0;
+            }
+
+            byte peak = 0;
+            for (int i = 0; i < data.Length; i++)
+            {
+                if (data[i] > peak)
+                {
+                    peak = data[i];
+                }
+            }
+
+            return peak / 255.0;
+        }
+
+        private readonly GyroMotionGravity motionGravity = new GyroMotionGravity();
+
+        // No explicit reset call needed: on a genuine physical disconnect,
+        // BackendManager.Device_Removal tears the Mapper down entirely and a
+        // brand new Mapper (and this field) is constructed when the device is
+        // re-enumerated, so motionGravity already starts clean. The only case
+        // where a single Mapper instance is reused across a reconnect-like
+        // event is the Steam Controller/Triton dongle sync cycle
+        // (SteamControllerReader/SteamControllerTritionReader toggling
+        // device.Synced -> BackendManager.Device_SyncedChanged ->
+        // PrepareSyncedInputDevice -> Mapper.Start()); no existing per-device
+        // gyro state (including GyroCalibration, whose own reset only fires
+        // once per reader thread on its first packet) is reset on that path
+        // either, so there is no existing hook to mirror here.
         public void PopulateStateGyro(ref GyroEventFrame frame)
         {
-            intermediateState.GyroYaw = frame.GyroYaw;
-            intermediateState.GyroPitch = frame.GyroPitch;
-            intermediateState.GyroRoll = frame.GyroRoll;
-            intermediateState.AccelX = frame.AccelX;
-            intermediateState.AccelY = frame.AccelY;
-            intermediateState.AccelZ = frame.AccelZ;
+            GyroMotionAxisAdapter.ToDualShock4OutputSpace(DeviceType,
+                frame.GyroYaw, frame.GyroPitch, frame.GyroRoll,
+                frame.AccelX, frame.AccelY, frame.AccelZ,
+                out intermediateState.GyroYaw, out intermediateState.GyroPitch, out intermediateState.GyroRoll,
+                out intermediateState.AccelX, out intermediateState.AccelY, out intermediateState.AccelZ);
+
+            // Keep the gravity estimate warm every tick, regardless of whether any
+            // gyro action is currently active. JSM does the same: ProcessMotion runs
+            // unconditionally in the poll loop, so gravity is already converged the
+            // instant the gyro button is pressed.
+            // Each device family reports its sensors in its own convention, so
+            // the conversion is selected per family. DeviceType is already the
+            // discriminator every mapper subclass overrides.
+            GyroMotionAxisAdapter.ToMotionSpace(DeviceType,
+                frame.AngGyroYaw, frame.AngGyroPitch, frame.AngGyroRoll,
+                frame.AccelXG, frame.AccelYG, frame.AccelZG,
+                out double gmGyroX, out double gmGyroY, out double gmGyroZ,
+                out double gmAccelX, out double gmAccelY, out double gmAccelZ);
+
+            motionGravity.Update(gmGyroX, gmGyroY, gmGyroZ,
+                gmAccelX, gmAccelY, gmAccelZ, frame.timeElapsed);
+
+            frame.GravX = motionGravity.Grav.x;
+            frame.GravY = motionGravity.Grav.y;
+            frame.GravZ = motionGravity.Grav.z;
+            frame.GravValid = motionGravity.HasGravity;
+        }
+
+        public void ClearStateGyro()
+        {
+            intermediateState.GyroYaw = 0;
+            intermediateState.GyroPitch = 0;
+            intermediateState.GyroRoll = 0;
+            intermediateState.AccelX = 0;
+            intermediateState.AccelY = 0;
+            intermediateState.AccelZ = 0;
         }
 
         public void ProcessActionSetLayerChecks()
         {
             if (queuedActionSet != -1)
             {
-                //Console.WriteLine("CHANGING SET: {0}", queuedActionSet);
-                //actionProfile.CurrentActionSet.ReleaseActions(this);
-                //actionProfile.SwitchSets(queuedActionSet, this);
                 actionProfile.SwitchSets(queuedActionSet, this);
 
                 // Switch to possible new ActionLayer before engaging new actions
@@ -2527,26 +2966,21 @@ namespace DS4MapperTest
                     }
                     else if (!applyQueuedActionLayer)
                     {
-                        //int tempIndex = actionProfile.CurrentActionSet.CurrentActionLayer.Index;
                         int tempIndex = queuedActionLayer;
                         actionProfile.CurrentActionSet.RemovePartialActionLayer(this, tempIndex);
-                        //actionProfile.CurrentActionSet.RemovePartialActionLayer(this, queuedActionLayer);
                     }
 
-                    //actionProfile.CurrentActionSet.SwitchActionLayer(this, queuedActionLayer);
                     queuedActionLayer = -1;
                     applyQueuedActionLayer = false;
                     switchQueuedActionLayer = false;
                 }
 
                 // Put new actions into an active state
-                //PrepareActionData(ref currentMapperState);
                 queuedActionSet = -1;
             }
             // Check if only an ActionLayer change is happening
             else if (queuedActionLayer != -1)
             {
-                Trace.WriteLine($"Going to Action Layer {queuedActionLayer}");
                 if (switchQueuedActionLayer)
                 {
                     actionProfile.CurrentActionSet.SwitchActionLayer(this, queuedActionLayer);
@@ -2557,16 +2991,12 @@ namespace DS4MapperTest
                 }
                 else if (!applyQueuedActionLayer)
                 {
-                    //int tempIndex = actionProfile.CurrentActionSet.CurrentActionLayer.Index;
                     int tempIndex = queuedActionLayer;
-                    //actionProfile.CurrentActionSet.RemovePartialActionLayer(this, queuedActionLayer);
                     actionProfile.CurrentActionSet.RemovePartialActionLayer(this, tempIndex);
                 }
 
-                //actionProfile.CurrentActionSet.SwitchActionLayer(this, queuedActionLayer);
 
                 // Put new actions into an active state
-                //PrepareActionData(ref currentMapperState);
                 queuedActionLayer = EMPTY_QUEUED_ACTION_LAYER;
                 applyQueuedActionLayer = false;
                 switchQueuedActionLayer = false;
@@ -2579,30 +3009,88 @@ namespace DS4MapperTest
 
         public virtual void ProcessSyncEvents()
         {
-            if (mouseSync)
+            // Advance any pending flick turns to completion independent of button state
+            for (int i = pendingFlicks.Count - 1; i >= 0; i--)
             {
-                //mouseReport.ResetMousePos();
+                PendingFlick flick = pendingFlicks[i];
+                flick.elapsed += currentLatency;
+                bool done = flick.elapsed >= flick.duration;
+                double progress = done ? 1.0 : flick.elapsed / flick.duration;
+                double rawDelta = (progress - flick.lastProgress) * flick.totalCounts;
+                flick.lastProgress = progress;
 
-                if (mouseX != 0.0 || mouseY != 0.0)
+                // Accumulate sub-integer counts in the flick itself; only write whole counts to
+                // mouseX so accuracy is never affected by remainderCutoff or mouseXRemainder resets
+                double toSend = rawDelta + flick.subCountCarry;
+                int intToSend = (int)toSend;
+                flick.subCountCarry = toSend - intToSend;
+
+                if (done)
                 {
-                    //Console.WriteLine("MOVE: {0}, {1}", (int)mouseX, (int)mouseY);
-                    GenerateMouseMoveEvent();
+                    // Round the residual sub-count on the final tick rather than discarding it
+                    if (Math.Abs(flick.subCountCarry) >= 0.5)
+                        intToSend += Math.Sign(flick.subCountCarry);
+                    pendingFlicks.RemoveAt(i);
                 }
                 else
                 {
-                    // Probably not needed here. Leave as a temporary precaution
-                    mouseXRemainder = mouseYRemainder = 0.0;
-
-                    //filterX.Filter(0.0, currentRate); // Smooth on output
-                    //filterY.Filter(0.0, currentRate); // Smooth on output
+                    pendingFlicks[i] = flick;
                 }
 
+                if (intToSend != 0)
+                {
+                    mouseX += intToSend;
+                    mouseSync = true;
+                }
+            }
+
+            if (mouseSync)
+            {
+                RelativeRouteMouseState otherState = GetRouteMouseState(MouseOutputRoute.Other);
+                otherState.X += mouseX;
+                otherState.Y += mouseY;
+                otherState.XRemainder = mouseXRemainder;
+                otherState.YRemainder = mouseYRemainder;
+                otherState.Sync = true;
+                FlushRelativeRoute(MouseOutputRoute.Other, otherState);
+                mouseX = mouseY = 0.0;
+                mouseXRemainder = mouseYRemainder = 0.0;
                 mouseSync = false;
             }
             else if (!mouseEventFired)
             {
-                // Probably not needed here. Leave as a temporary precaution
                 mouseXRemainder = mouseYRemainder = 0.0;
+            }
+
+            foreach ((MouseOutputRoute route, RelativeRouteMouseState state) in routeMouseStates)
+            {
+                if (route == MouseOutputRoute.Other)
+                {
+                    continue;
+                }
+
+                if (state.Sync)
+                {
+                    FlushRelativeRoute(route, state);
+                }
+
+                if (state.WheelSync)
+                {
+                    if (mouseOutputDispatcher != null)
+                    {
+                        mouseOutputDispatcher.QueueWheel(mouseOutputProducerId, route,
+                            state.WheelY * eventInputMapping.WHEEL_TICK_BASE,
+                            state.WheelX * eventInputMapping.WHEEL_TICK_BASE);
+                    }
+                    else
+                    {
+                        eventInputHandler.PerformMouseWheelEvent(state.WheelY * eventInputMapping.WHEEL_TICK_BASE,
+                            state.WheelX * eventInputMapping.WHEEL_TICK_BASE);
+                    }
+
+                    state.WheelX = state.WheelY = 0;
+                    state.WheelSync = false;
+                }
             }
 
             mouseEventFired = false;
@@ -2610,30 +3098,38 @@ namespace DS4MapperTest
             if (absMouseSync)
             {
                 double outX = absMouseX, outY = absMouseY;
-                //if (!appGlobal.absUseAllMonitors)
-                //{
-                //    double tempX = outX, tempY = outY;
-                //    TranslateCoorToAbsDisplay(tempX, tempY, ref appGlobal.absDisplayBounds,
-                //        ref appGlobal.fullDesktopBounds, out outX, out outY);
-                //}
-
-                eventInputHandler.MoveAbsoluteMouse(outX, outY);
+                if (mouseOutputDispatcher != null)
+                {
+                    mouseOutputDispatcher.QueueAbsolute(mouseOutputProducerId, outX, outY);
+                }
+                else
+                {
+                    eventInputHandler.MoveAbsoluteMouse(outX, outY);
+                }
                 absMouseSync = false;
             }
 
             if (mouseWheelSync)
             {
-                eventInputHandler.PerformMouseWheelEvent(vertical: mouseWheelY * eventInputMapping.WHEEL_TICK_BASE,
-                    horizontal: mouseWheelX * eventInputMapping.WHEEL_TICK_BASE);
+                if (mouseOutputDispatcher != null)
+                {
+                    mouseOutputDispatcher.QueueWheel(mouseOutputProducerId, MouseOutputRoute.Gyro,
+                        mouseWheelY * eventInputMapping.WHEEL_TICK_BASE,
+                        mouseWheelX * eventInputMapping.WHEEL_TICK_BASE);
+                }
+                else
+                {
+                    eventInputHandler.PerformMouseWheelEvent(vertical: mouseWheelY * eventInputMapping.WHEEL_TICK_BASE,
+                        horizontal: mouseWheelX * eventInputMapping.WHEEL_TICK_BASE);
+                }
                 mouseWheelX = mouseWheelY = 0;
                 mouseWheelSync = false;
             }
 
             SyncMouseButtons();
-            //fakerInputDev.UpdateRelativeMouse(mouseReport);
 
             SyncKeyboard();
-            //fakerInputDev.UpdateKeyboard(keyboardReport);
+            mouseOutputDispatcher?.FlushProducer(mouseOutputProducerId, flushSharedFakerInput: false);
             eventInputHandler.Sync();
 
             if (gamepadSync && intermediateState.Dirty)
@@ -2648,7 +3144,15 @@ namespace DS4MapperTest
                     else if (outputControlType == OutputContType.DualShock4)
                     {
                         PopulateDualShock4();
-                        //outputController?.SubmitReport();
+                    }
+                    else if (outputControlType == OutputContType.DualSense ||
+                        outputControlType == OutputContType.DualSenseEdge)
+                    {
+                        PopulateDualSense();
+                    }
+                    else if (outputControlType == OutputContType.SwitchPro2)
+                    {
+                        PopulateSwitchPro2();
                     }
                 }
 
@@ -2664,7 +3168,6 @@ namespace DS4MapperTest
             if (hasInputEvts)
             {
                 using (WriteLocker locker = new WriteLocker(eventQueueLocker))
-                //lock (eventQueueLock)
                 {
                     Action tempAct = null;
                     for (int actInd = 0, actLen = eventQueue.Count;
@@ -2728,6 +3231,23 @@ namespace DS4MapperTest
             }
         }
 
+        // Force-releases any Release Press-style outputs still mid-pulse (pressed, waiting
+        // on their End Delay) so nothing is left stuck down. Called on shutdown/disconnect,
+        // where no further mapper ticks will occur to let ProcessReleaseEvents finish them
+        // naturally.
+        public void ReleaseAllPendingReleaseFuns()
+        {
+            if (pendingReleaseFuns.Count > 0)
+            {
+                foreach (ActionFunc actionFunc in pendingReleaseFuns)
+                {
+                    actionFunc.Release(this);
+                }
+
+                pendingReleaseFuns.Clear();
+            }
+        }
+
         /// <summary>
         /// Add Action to a list of Actions to call at the end of mapping routine.
         /// Action will be called in input thread
@@ -2735,7 +3255,6 @@ namespace DS4MapperTest
         /// <param name="tempAct">Action to enqueue to Queue</param>
         public void QueueEvent(Action tempAct)
         {
-            //lock(eventQueueLock)
             using (WriteLocker locker = new WriteLocker(eventQueueLocker))
             {
                 eventQueue.Enqueue(tempAct);
@@ -2770,6 +3289,10 @@ namespace DS4MapperTest
             */
 
             BaseReader.HaltReportingRunAction(tempAct);
+            if (suppressProfileDirtyTracking == 0)
+            {
+                ProfileEditCommitted?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         public abstract void EstablishForceFeedback();
@@ -2882,12 +3405,44 @@ namespace DS4MapperTest
                     intermediateState.BtnMode = pressed;
                     intermediateState.Dirty = true;
                     break;
+                case JoypadActionCodes.BtnHome:
+                    intermediateState.BtnHome = pressed;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnCapture:
+                    intermediateState.BtnCapture = pressed;
+                    intermediateState.Dirty = true;
+                    break;
                 case JoypadActionCodes.BtnStart:
                     intermediateState.BtnStart = pressed;
                     intermediateState.Dirty = true;
                     break;
                 case JoypadActionCodes.BtnSelect:
                     intermediateState.BtnSelect = pressed;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnLGrip:
+                    intermediateState.BtnLGrip = pressed;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnRGrip:
+                    intermediateState.BtnRGrip = pressed;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnMode2:
+                    intermediateState.BtnMode2 = pressed;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnMode3:
+                    intermediateState.BtnMode3 = pressed;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnLGrip2:
+                    intermediateState.BtnLGrip2 = pressed;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnRGrip2:
+                    intermediateState.BtnRGrip2 = pressed;
                     intermediateState.Dirty = true;
                     break;
                 case JoypadActionCodes.BtnLShoulder:
@@ -2985,12 +3540,44 @@ namespace DS4MapperTest
                     intermediateState.BtnMode = active;
                     intermediateState.Dirty = true;
                     break;
+                case JoypadActionCodes.BtnHome:
+                    intermediateState.BtnHome = active;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnCapture:
+                    intermediateState.BtnCapture = active;
+                    intermediateState.Dirty = true;
+                    break;
                 case JoypadActionCodes.BtnStart:
                     intermediateState.BtnStart = active;
                     intermediateState.Dirty = true;
                     break;
                 case JoypadActionCodes.BtnSelect:
                     intermediateState.BtnSelect = active;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnLGrip:
+                    intermediateState.BtnLGrip = active;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnRGrip:
+                    intermediateState.BtnRGrip = active;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnMode2:
+                    intermediateState.BtnMode2 = active;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnMode3:
+                    intermediateState.BtnMode3 = active;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnLGrip2:
+                    intermediateState.BtnLGrip2 = active;
+                    intermediateState.Dirty = true;
+                    break;
+                case JoypadActionCodes.BtnRGrip2:
+                    intermediateState.BtnRGrip2 = active;
                     intermediateState.Dirty = true;
                     break;
                 case JoypadActionCodes.BtnLShoulder:
@@ -3127,6 +3714,58 @@ namespace DS4MapperTest
             }
         }
 
+        protected static double ClampUnit(double value)
+        {
+            return Math.Clamp(value, 0.0, 1.0);
+        }
+
+        protected static double NormaliseTouchAxis(double value, double min, double max)
+        {
+            if (max <= min)
+            {
+                return 0.0;
+            }
+
+            return ClampUnit((value - min) / (max - min));
+        }
+
+        protected static ushort ScaleTouchAxis(double normalisedValue, int max)
+        {
+            return (ushort)Math.Clamp((int)Math.Round(ClampUnit(normalisedValue) * max), 0, max);
+        }
+
+        protected void SetVirtualTouchContact1(double xNorm, double yNorm, bool active)
+        {
+            intermediateState.Touch1XNorm = ClampUnit(xNorm);
+            intermediateState.Touch1YNorm = ClampUnit(yNorm);
+            intermediateState.Touch1Active = active;
+        }
+
+        protected void SetVirtualTouchContact2(double xNorm, double yNorm, bool active)
+        {
+            intermediateState.Touch2XNorm = ClampUnit(xNorm);
+            intermediateState.Touch2YNorm = ClampUnit(yNorm);
+            intermediateState.Touch2Active = active;
+        }
+
+        protected void ApplyVirtualTouchState(double touch1XNorm, double touch1YNorm, bool touch1Active,
+            double touch2XNorm, double touch2YNorm, bool touch2Active, bool touchClick)
+        {
+            bool contact1Changed = intermediateState.Touch1Active != touch1Active ||
+                intermediateState.Touch1XNorm != ClampUnit(touch1XNorm) ||
+                intermediateState.Touch1YNorm != ClampUnit(touch1YNorm);
+            bool contact2Changed = intermediateState.Touch2Active != touch2Active ||
+                intermediateState.Touch2XNorm != ClampUnit(touch2XNorm) ||
+                intermediateState.Touch2YNorm != ClampUnit(touch2YNorm);
+            bool oldTouchClick = intermediateState.BtnTouchClick;
+
+            SetVirtualTouchContact1(touch1XNorm, touch1YNorm, touch1Active);
+            SetVirtualTouchContact2(touch2XNorm, touch2YNorm, touch2Active);
+            intermediateState.BtnTouchClick |= touchClick;
+            intermediateState.Dirty |= contact1Changed || contact2Changed ||
+                oldTouchClick != intermediateState.BtnTouchClick;
+        }
+
         public virtual void SetFeedback(string mappingId, double ratio,
             MapAction.HapticsSide side = MapAction.HapticsSide.Default)
         {
@@ -3141,6 +3780,7 @@ namespace DS4MapperTest
             quit = true;
 
             actionProfile.CurrentActionSet.ReleaseActions(this, true);
+            ReleaseAllPendingReleaseFuns();
 
             editActionSet = null;
             editLayer = null;
@@ -3148,6 +3788,15 @@ namespace DS4MapperTest
             // Relay changes to event systems
             SyncKeyboard();
             SyncMouseButtons();
+            if (mouseOutputDispatcher != null &&
+                !mouseOutputProducerId.Equals(default(MouseOutputProducerId)))
+            {
+                mouseOutputDispatcher.FlushProducer(mouseOutputProducerId,
+                    flushSharedFakerInput: false);
+                mouseOutputDispatcher.UnregisterProducer(mouseOutputProducerId);
+                mouseOutputProducerId = default;
+                mouseOutputDispatcher = null;
+            }
             if (finalSync)
             {
                 eventInputHandler.Sync();
@@ -3156,23 +3805,14 @@ namespace DS4MapperTest
 
         public void UnplugViiperVirtualControllers()
         {
-            if (deviceHandle != 0)
+            lock (viiperDeviceLock)
             {
-                if (outputControlType == OutputContType.Xbox360)
+                if (deviceHandle != 0 || outputControlType != OutputContType.None)
                 {
-                    LibVIIPER.RemoveXbox360Device(deviceHandle);
+                    RemoveViiperDeviceLocked();
+                    Thread.Sleep(100);
                 }
-                else if (outputControlType == OutputContType.DualShock4)
-                {
-                    LibVIIPER.RemoveDS4Device(deviceHandle);
-                }
-
-                Thread.Sleep(100);
             }
-
-            deviceHandle = 0;
-            viiperBusId = 0; // Reset bus ID slot for old device handle
-            outputControlType = OutputContType.None;
         }
     }
 }

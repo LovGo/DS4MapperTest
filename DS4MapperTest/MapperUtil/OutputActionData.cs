@@ -25,6 +25,8 @@ namespace DS4MapperTest.MapperUtil
             HoldActionLayer,
             Wait,
             CycleStep,
+            CameraTurn,
+            RecalibrateGyro,
         }
 
         public enum SetChangeCondition : uint
@@ -103,6 +105,16 @@ namespace DS4MapperTest.MapperUtil
         public bool useNotches;
         public double currentNotches;
         public bool processOutput;
+
+        // Camera Turn parameters — positive angle = right, negative = left
+        public double cameraTurnAngle = 180.0;
+        public double cameraTurnDurationMs = 100.0;
+        public double cameraTurnCounts360 = 1800.0; // mouse counts for one full 360° at your actual in-game sensitivity
+        // Camera Turn runtime state
+        public double cameraTurnElapsed = 0.0;
+        public double cameraTurnLastProgress = 0.0;
+        // True from the moment this press starts the animation until the button is released
+        public bool cameraTurnActive = false;
 
         // Flag to have process stop processing output actions in an ActionFunc sequence
         public bool breakSequence;
@@ -275,6 +287,9 @@ namespace DS4MapperTest.MapperUtil
             outputPadMap = new JoypadActionCodeMapping(sourceData.outputPadMap);
             useNotches = sourceData.useNotches;
             processOutput = sourceData.processOutput;
+            cameraTurnAngle = sourceData.cameraTurnAngle;
+            cameraTurnDurationMs = sourceData.cameraTurnDurationMs;
+            cameraTurnCounts360 = sourceData.cameraTurnCounts360;
         }
 
         public void Prepare(ActionType type, int code)
@@ -458,6 +473,9 @@ namespace DS4MapperTest.MapperUtil
             skipRelease = false;
             waitForRelease = false;
             currentNotches = 0.0;
+            cameraTurnElapsed = 0.0;
+            cameraTurnLastProgress = 0.0;
+            cameraTurnActive = false;
         }
 
         public void Reset()
@@ -578,6 +596,12 @@ namespace DS4MapperTest.MapperUtil
                     break;
                 case ActionType.Wait:
                     result = $"Wait {durationMs}";
+                    break;
+                case ActionType.CameraTurn:
+                    result = $"Flick Turn ({cameraTurnAngle}°, {cameraTurnDurationMs}ms)";
+                    break;
+                case ActionType.RecalibrateGyro:
+                    result = "Recalibrate Gyro";
                     break;
                 case ActionType.Empty:
                     result = "Empty";

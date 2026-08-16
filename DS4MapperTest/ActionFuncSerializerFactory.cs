@@ -32,10 +32,14 @@ namespace DS4MapperTest
                 case ChordedPressFunc:
                     serializer = new ChordedPressFuncSerializer(tempFunc);
                     break;
+                case SimPressFunc:
+                    serializer = new SimPressFuncSerializer(tempFunc);
+                    break;
                 case AnalogFunc:
                     serializer = new AnalogFuncSerializer(tempFunc);
                     break;
                 case DoublePressFunc:
+                    serializer = new DoublePressFuncSerializer(tempFunc);
                     break;
                 default:
                     break;

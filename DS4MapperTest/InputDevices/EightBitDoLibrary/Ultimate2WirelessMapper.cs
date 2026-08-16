@@ -21,6 +21,10 @@ namespace DS4MapperTest.InputDevices.EightBitDoLibrary
         private Ultimate2WirelessReader reader;
 
         public override InputDeviceType DeviceType => InputDeviceType.EightBitDoUltimate2Wireless;
+        public override double GetNormalisedTriggerPosition(
+            TriggerSensitivityModifierTrigger trigger) => Math.Clamp(
+                (trigger == TriggerSensitivityModifierTrigger.Left ? currentMapperState.LT : currentMapperState.RT) / 255.0,
+                0.0, 1.0);
         public override DeviceReaderBase BaseReader
         {
             get => reader;
@@ -406,7 +410,8 @@ namespace DS4MapperTest.InputDevices.EightBitDoLibrary
                         elapsedReference = gyroSensDefinition.elapsedReference,
                     };
 
-                    PopulateStateGyro(ref gyroFrame);
+                    if (gyroAct.OutputsNativeGyro) PopulateStateGyro(ref gyroFrame);
+                    else ClearStateGyro();
                     gyroAct.Prepare(this, ref gyroFrame);
                     if (gyroAct.active)
                     {
@@ -460,15 +465,46 @@ namespace DS4MapperTest.InputDevices.EightBitDoLibrary
 
         public override void HookFeedback()
         {
-            viiper360Feedback = TestVIIPER360Feedback;
-            bool result = LibVIIPER.SetXbox360RumbleCallback(deviceHandle, viiper360Feedback);
-            //Trace.WriteLine($"RESULT {result}");
+            if (outputControlType == OutputContType.Xbox360)
+            {
+                viiper360Feedback = TestVIIPER360Feedback;
+                bool result = LibVIIPER.SetXbox360RumbleCallback(deviceHandle, viiper360Feedback);
+                //Trace.WriteLine($"RESULT {result}");
+            }
+            else if (outputControlType == OutputContType.DualSense ||
+                outputControlType == OutputContType.DualSenseEdge)
+            {
+                viiperDSFeedback = TestVIIPERDSFeedback;
+                bool result = LibVIIPER.SetDualSenseOutputCallback(deviceHandle, viiperDSFeedback);
+                //Trace.WriteLine($"RESULT {result}");
+            }
+            else if (outputControlType == OutputContType.SwitchPro2)
+            {
+                viiperNS2ProFeedback = TestVIIPERNS2ProFeedback;
+                bool result = LibVIIPER.SetNS2ProOutputCallback(deviceHandle, viiperNS2ProFeedback);
+                //Trace.WriteLine($"RESULT {result}");
+            }
         }
 
         public void TestVIIPER360Feedback(nuint handle, byte leftMotor, byte rightMotor)
         {
             device.FeedbackStateRef.LeftHeavy = leftMotor;
             device.FeedbackStateRef.RightLight = rightMotor;
+            device.RumbleDirty = true;
+        }
+
+        public void TestVIIPERDSFeedback(nuint handle, byte rumbleSmall, byte rumbleLarge,
+            byte ledRed, byte ledGreen, byte ledBlue, byte playerLeds)
+        {
+            device.FeedbackStateRef.LeftHeavy = rumbleLarge;
+            device.FeedbackStateRef.RightLight = rumbleSmall;
+            device.RumbleDirty = true;
+        }
+
+        public void TestVIIPERNS2ProFeedback(nuint handle, NS2ProOutputState output)
+        {
+            device.FeedbackStateRef.LeftHeavy = (byte)(ApproximateNS2ProRumbleRatio(output, true) * 255.0);
+            device.FeedbackStateRef.RightLight = (byte)(ApproximateNS2ProRumbleRatio(output, false) * 255.0);
             device.RumbleDirty = true;
         }
 

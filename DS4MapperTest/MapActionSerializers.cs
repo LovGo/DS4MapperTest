@@ -1,5 +1,6 @@
-﻿using DS4MapperTest.ActionUtil;
+using DS4MapperTest.ActionUtil;
 using DS4MapperTest.ButtonActions;
+using DS4MapperTest.Common;
 using DS4MapperTest.GyroActions;
 using DS4MapperTest.MapperUtil;
 using DS4MapperTest.StickActions;
@@ -86,14 +87,12 @@ namespace DS4MapperTest
         [OnDeserializing]
         internal void OnDeserializingMethod(StreamingContext context)
         {
-            Trace.WriteLine("IN MapActionSerializer.OnDeserializingMethod");
             ActionLayerSerializer.CurrentActionIndex++;
         }
 
         [OnDeserialized]
         internal void OnDeserializedMethod(StreamingContext context)
         {
-            Trace.WriteLine("IN MapActionSerializer.OnDeserializedMethod");
         }
     }
 
@@ -213,14 +212,12 @@ namespace DS4MapperTest
         [OnDeserializing]
         internal void OnButtonActionDeserializingMethod(StreamingContext context)
         {
-            Trace.WriteLine("IN ButtonActionSerializer.OnDeserializingMethod");
             ActionLayerSerializer.CurrentActionIndex++;
         }
 
         [OnDeserialized]
         internal void OnButtionActionDeserializedMethod(StreamingContext context)
         {
-            Trace.WriteLine("IN ButtonActionSerializer.OnDeserializedMethod");
         }
     }
 
@@ -687,6 +684,203 @@ namespace DS4MapperTest
         }
     }
 
+    public class TriggerMouseActionSerializer : MapActionSerializer
+    {
+        public class DeltaAccelSettingsSerializer
+        {
+            private TriggerMouse triggerMouseAction;
+
+            public bool Enabled
+            {
+                get => triggerMouseAction.MouseDeltaSettings.Enabled;
+                set => triggerMouseAction.MouseDeltaSettings.Enabled = value;
+            }
+
+            public double Multiplier
+            {
+                get => triggerMouseAction.MouseDeltaSettings.Multiplier;
+                set => triggerMouseAction.MouseDeltaSettings.Multiplier = value;
+            }
+
+            public double MaxTravel
+            {
+                get => triggerMouseAction.MouseDeltaSettings.MaxTravel;
+                set => triggerMouseAction.MouseDeltaSettings.MaxTravel = value;
+            }
+
+            public double MinTravel
+            {
+                get => triggerMouseAction.MouseDeltaSettings.MinTravel;
+                set => triggerMouseAction.MouseDeltaSettings.MinTravel = value;
+            }
+
+            public double EasingDuration
+            {
+                get => triggerMouseAction.MouseDeltaSettings.EasingDuration;
+                set => triggerMouseAction.MouseDeltaSettings.EasingDuration = value;
+            }
+
+            public double MinFactor
+            {
+                get => triggerMouseAction.MouseDeltaSettings.MinFactor;
+                set => triggerMouseAction.MouseDeltaSettings.MinFactor = value;
+            }
+
+            public DeltaAccelSettingsSerializer(TriggerMouse mouseAction)
+            {
+                this.triggerMouseAction = mouseAction;
+            }
+        }
+
+        public class TriggerMouseSettings
+        {
+            private TriggerMouse triggerMouseAction;
+            private DeltaAccelSettingsSerializer mouseDeltaSettingsSerializer;
+
+            public double DeadZone
+            {
+                get => triggerMouseAction.DeadMod.DeadZone;
+                set
+                {
+                    triggerMouseAction.DeadMod.DeadZone = Math.Clamp(value, 0.0, 1.0);
+                    DeadZoneChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DeadZoneChanged;
+
+            public double MaxZone
+            {
+                get => triggerMouseAction.DeadMod.MaxZone;
+                set
+                {
+                    triggerMouseAction.DeadMod.MaxZone = Math.Clamp(value, 0.0, 1.0);
+                    MaxZoneChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MaxZoneChanged;
+
+            public int MouseSpeed
+            {
+                get => triggerMouseAction.MouseSpeed;
+                set
+                {
+                    triggerMouseAction.MouseSpeed = value;
+                    MouseSpeedChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MouseSpeedChanged;
+
+            [JsonConverter(typeof(SafeStringEnumConverter),
+                StickOutCurve.Curve.Linear)]
+            public StickOutCurve.Curve OutputCurve
+            {
+                get => triggerMouseAction.OutputCurve;
+                set
+                {
+                    triggerMouseAction.OutputCurve = value;
+                    OutputCurveChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OutputCurveChanged;
+
+            public double DirectionDegrees
+            {
+                get => triggerMouseAction.DirectionDegrees;
+                set
+                {
+                    triggerMouseAction.DirectionDegrees = value;
+                    DirectionDegreesChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DirectionDegreesChanged;
+
+            public DeltaAccelSettingsSerializer DeltaSettings
+            {
+                get => mouseDeltaSettingsSerializer;
+                set
+                {
+                    mouseDeltaSettingsSerializer = value;
+                    DeltaSettingsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DeltaSettingsChanged;
+
+            public TriggerMouseSettings(TriggerMouse mouseAction)
+            {
+                triggerMouseAction = mouseAction;
+                mouseDeltaSettingsSerializer = new DeltaAccelSettingsSerializer(mouseAction);
+            }
+        }
+
+        private TriggerMouse triggerMouseAction =
+            new TriggerMouse();
+
+        private TriggerMouseSettings settings;
+        public TriggerMouseSettings Settings { get => settings; set => settings = value; }
+
+        // Deserialize
+        public TriggerMouseActionSerializer() : base()
+        {
+            mapAction = triggerMouseAction;
+            settings = new TriggerMouseSettings(triggerMouseAction);
+
+            NameChanged += TriggerMouseActionSerializer_NameChanged;
+            settings.DeadZoneChanged += Settings_DeadZoneChanged;
+            settings.MaxZoneChanged += Settings_MaxZoneChanged;
+            settings.MouseSpeedChanged += Settings_MouseSpeedChanged;
+            settings.OutputCurveChanged += Settings_OutputCurveChanged;
+            settings.DirectionDegreesChanged += Settings_DirectionDegreesChanged;
+            settings.DeltaSettingsChanged += Settings_DeltaSettingsChanged;
+        }
+
+        private void TriggerMouseActionSerializer_NameChanged(object sender, EventArgs e)
+        {
+            triggerMouseAction.ChangedProperties.Add(TriggerMouse.PropertyKeyStrings.NAME);
+        }
+
+        private void Settings_DeadZoneChanged(object sender, EventArgs e)
+        {
+            triggerMouseAction.ChangedProperties.Add(TriggerMouse.PropertyKeyStrings.DEAD_ZONE);
+        }
+
+        private void Settings_MaxZoneChanged(object sender, EventArgs e)
+        {
+            triggerMouseAction.ChangedProperties.Add(TriggerMouse.PropertyKeyStrings.MAX_ZONE);
+        }
+
+        private void Settings_MouseSpeedChanged(object sender, EventArgs e)
+        {
+            triggerMouseAction.ChangedProperties.Add(TriggerMouse.PropertyKeyStrings.MOUSE_SPEED);
+        }
+
+        private void Settings_OutputCurveChanged(object sender, EventArgs e)
+        {
+            triggerMouseAction.ChangedProperties.Add(TriggerMouse.PropertyKeyStrings.OUTPUT_CURVE);
+        }
+
+        private void Settings_DirectionDegreesChanged(object sender, EventArgs e)
+        {
+            triggerMouseAction.ChangedProperties.Add(TriggerMouse.PropertyKeyStrings.DIRECTION_DEGREES);
+        }
+
+        private void Settings_DeltaSettingsChanged(object sender, EventArgs e)
+        {
+            triggerMouseAction.ChangedProperties.Add(TriggerMouse.PropertyKeyStrings.DELTA_SETTINGS);
+        }
+
+        // Serialize
+        public TriggerMouseActionSerializer(ActionLayer tempLayer, MapAction mapAction) :
+            base(tempLayer, mapAction)
+        {
+            if (mapAction is TriggerMouse temp)
+            {
+                triggerMouseAction = temp;
+                this.mapAction = triggerMouseAction;
+                settings = new TriggerMouseSettings(triggerMouseAction);
+            }
+        }
+    }
+
     public class TriggerDualStageActionSerializer : MapActionSerializer
     {
         public class TriggerDualStageSettings
@@ -759,6 +953,22 @@ namespace DS4MapperTest
                 }
             }
             public event EventHandler ForceHipFireDelayChanged;
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public MapAction.HapticsIntensity SoftPullHapticsIntensity
+            {
+                get => triggerDualAction.SoftPullActionHapticsIntensity;
+                set
+                {
+                    triggerDualAction.SoftPullActionHapticsIntensity = value;
+                    SoftPullHapticsIntensityChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler SoftPullHapticsIntensityChanged;
+            public bool ShouldSerializeSoftPullHapticsIntensity()
+            {
+                return triggerDualAction.ChangedProperties.Contains(TriggerDualStageAction.PropertyKeyStrings.SOFT_PULL_HAPTICS_INTENSITY);
+            }
 
             [JsonConverter(typeof(StringEnumConverter))]
             public MapAction.HapticsIntensity FullPullHapticsIntensity
@@ -869,7 +1079,13 @@ namespace DS4MapperTest
             settings.DualStageModeChanged += Settings_DualStageModeChanged;
             settings.HipFireDelayChanged += Settings_HipFireDelayChanged;
             settings.ForceHipFireDelayChanged += Settings_ForceHipFireDelayChanged;
+            settings.SoftPullHapticsIntensityChanged += Settings_SoftPullHapticsIntensityChanged;
             settings.FullPullHapticsIntensityChanged += Settings_FullPullHapticsIntensityChanged;
+        }
+
+        private void Settings_SoftPullHapticsIntensityChanged(object sender, EventArgs e)
+        {
+            triggerDualAction.ChangedProperties.Add(TriggerDualStageAction.PropertyKeyStrings.SOFT_PULL_HAPTICS_INTENSITY);
         }
 
         private void Settings_FullPullHapticsIntensityChanged(object sender, EventArgs e)
@@ -979,6 +1195,263 @@ namespace DS4MapperTest
             }
 
             fullPullStageButton.ActionFuncSerializers.AddRange(tempFuncs);
+        }
+    }
+
+    // Mirrors TriggerDualStageActionSerializer field-for-field. Used only for the
+    // Steam Controller 2 touchpad click Soft Press / Full Press binding.
+    public class TouchpadPressureDualStageActionSerializer : MapActionSerializer
+    {
+        public class TouchpadPressureDualStageSettings
+        {
+            private TouchpadPressureDualStageAction touchDualAction;
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public TriggerDualStageAction.DualStageMode ActivationStyle
+            {
+                get => touchDualAction.ActivationStyle;
+                set
+                {
+                    touchDualAction.ActivationStyle = value;
+                    ActivationStyleChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler ActivationStyleChanged;
+
+            public int SoftPressThreshold
+            {
+                get => touchDualAction.SoftPressThreshold;
+                set
+                {
+                    touchDualAction.SoftPressThreshold = value;
+                    SoftPressThresholdChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler SoftPressThresholdChanged;
+
+            public int FullPressThreshold
+            {
+                get => touchDualAction.FullPressThreshold;
+                set
+                {
+                    touchDualAction.FullPressThreshold = value;
+                    FullPressThresholdChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler FullPressThresholdChanged;
+
+            public int HipFireDelay
+            {
+                get => touchDualAction.HipFireDelayMs;
+                set
+                {
+                    touchDualAction.HipFireDelayMs = value;
+                    HipFireDelayChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler HipFireDelayChanged;
+
+            public bool ForceHipFireDelay
+            {
+                get => touchDualAction.ForceHipFireDelay;
+                set
+                {
+                    touchDualAction.ForceHipFireDelay = value;
+                    ForceHipFireDelayChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler ForceHipFireDelayChanged;
+
+            public TouchpadPressureDualStageSettings(TouchpadPressureDualStageAction action)
+            {
+                touchDualAction = action;
+            }
+        }
+
+        public class StageButtonBinding
+        {
+            private string actionDirName;
+            [JsonProperty("Name", Required = Required.Default)]
+            public string ActionDirName
+            {
+                get => actionDirName;
+                set => actionDirName = value;
+            }
+            public bool ShouldSerializeActionDirName()
+            {
+                return !string.IsNullOrEmpty(actionDirName);
+            }
+
+            private List<ActionFuncSerializer> actionFuncSerializers =
+                new List<ActionFuncSerializer>();
+            [JsonProperty("Functions", Required = Required.Always)]
+            public List<ActionFuncSerializer> ActionFuncSerializers
+            {
+                get => actionFuncSerializers;
+                set
+                {
+                    actionFuncSerializers = value;
+                    ActionFuncSerializersChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler ActionFuncSerializersChanged;
+        }
+
+        private TouchpadPressureDualStageAction touchDualAction = new TouchpadPressureDualStageAction();
+
+        private StageButtonBinding softPressStageButton = new StageButtonBinding();
+        public StageButtonBinding SoftPress
+        {
+            get => softPressStageButton;
+            set
+            {
+                softPressStageButton = value;
+                SoftPressChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        public event EventHandler SoftPressChanged;
+        public bool ShouldSerializeSoftPress()
+        {
+            return softPressStageButton.ActionFuncSerializers != null &&
+                softPressStageButton.ActionFuncSerializers.Count > 0;
+        }
+
+        private StageButtonBinding fullPressStageButton = new StageButtonBinding();
+        public StageButtonBinding FullPress
+        {
+            get => fullPressStageButton;
+            set
+            {
+                fullPressStageButton = value;
+                FullPressChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        public event EventHandler FullPressChanged;
+        public bool ShouldSerializeFullPress()
+        {
+            return fullPressStageButton.ActionFuncSerializers != null &&
+                fullPressStageButton.ActionFuncSerializers.Count > 0;
+        }
+
+        private TouchpadPressureDualStageSettings settings;
+        public TouchpadPressureDualStageSettings Settings
+        {
+            get => settings;
+            set => settings = value;
+        }
+
+        // Deserialize
+        public TouchpadPressureDualStageActionSerializer() : base()
+        {
+            mapAction = touchDualAction;
+            settings = new TouchpadPressureDualStageSettings(touchDualAction);
+
+            NameChanged += TouchpadPressureDualStageActionSerializer_NameChanged;
+            SoftPressChanged += TouchpadPressureDualStageActionSerializer_SoftPressChanged;
+            FullPressChanged += TouchpadPressureDualStageActionSerializer_FullPressChanged;
+            settings.ActivationStyleChanged += Settings_ActivationStyleChanged;
+            settings.SoftPressThresholdChanged += Settings_SoftPressThresholdChanged;
+            settings.FullPressThresholdChanged += Settings_FullPressThresholdChanged;
+            settings.HipFireDelayChanged += Settings_HipFireDelayChanged;
+            settings.ForceHipFireDelayChanged += Settings_ForceHipFireDelayChanged;
+        }
+
+        private void Settings_ForceHipFireDelayChanged(object sender, EventArgs e)
+        {
+            touchDualAction.ChangedProperties.Add(TouchpadPressureDualStageAction.PropertyKeyStrings.FORCE_HIP_FIRE_TIME);
+        }
+
+        private void Settings_HipFireDelayChanged(object sender, EventArgs e)
+        {
+            touchDualAction.ChangedProperties.Add(TouchpadPressureDualStageAction.PropertyKeyStrings.HIPFIRE_DELAY);
+        }
+
+        private void Settings_FullPressThresholdChanged(object sender, EventArgs e)
+        {
+            touchDualAction.ChangedProperties.Add(TouchpadPressureDualStageAction.PropertyKeyStrings.FULL_THRESHOLD);
+        }
+
+        private void Settings_SoftPressThresholdChanged(object sender, EventArgs e)
+        {
+            touchDualAction.ChangedProperties.Add(TouchpadPressureDualStageAction.PropertyKeyStrings.SOFT_THRESHOLD);
+        }
+
+        private void Settings_ActivationStyleChanged(object sender, EventArgs e)
+        {
+            touchDualAction.ChangedProperties.Add(TouchpadPressureDualStageAction.PropertyKeyStrings.ACTIVATION_STYLE);
+        }
+
+        private void TouchpadPressureDualStageActionSerializer_FullPressChanged(object sender, EventArgs e)
+        {
+            touchDualAction.ChangedProperties.Add(TouchpadPressureDualStageAction.PropertyKeyStrings.FULLPRESS_BUTTON);
+        }
+
+        private void TouchpadPressureDualStageActionSerializer_SoftPressChanged(object sender, EventArgs e)
+        {
+            touchDualAction.ChangedProperties.Add(TouchpadPressureDualStageAction.PropertyKeyStrings.SOFTPRESS_BUTTON);
+        }
+
+        private void TouchpadPressureDualStageActionSerializer_NameChanged(object sender, EventArgs e)
+        {
+            touchDualAction.ChangedProperties.Add(TouchpadPressureDualStageAction.PropertyKeyStrings.NAME);
+        }
+
+        // Pre-serialize ctor
+        public TouchpadPressureDualStageActionSerializer(ActionLayer tempLayer, MapAction mapAction) :
+            base(tempLayer, mapAction)
+        {
+            if (mapAction is TouchpadPressureDualStageAction temp)
+            {
+                touchDualAction = temp;
+                settings = new TouchpadPressureDualStageSettings(touchDualAction);
+
+                softPressStageButton.ActionDirName = touchDualAction.SoftPressActButton.Name;
+                fullPressStageButton.ActionDirName = touchDualAction.FullPressActButton.Name;
+
+                PopulateFuncs();
+            }
+        }
+
+        // Deserialize
+        public override void PopulateMap()
+        {
+            touchDualAction.SoftPressActButton.ActionFuncs.Clear();
+            touchDualAction.FullPressActButton.ActionFuncs.Clear();
+
+            AxisDirButton tempButton = touchDualAction.SoftPressActButton;
+            foreach (ActionFuncSerializer serializer in softPressStageButton.ActionFuncSerializers)
+            {
+                serializer.PopulateFunc();
+                tempButton.ActionFuncs.Add(serializer.ActionFunc);
+            }
+            tempButton.Name = softPressStageButton.ActionDirName;
+
+            tempButton = touchDualAction.FullPressActButton;
+            foreach (ActionFuncSerializer serializer in fullPressStageButton.ActionFuncSerializers)
+            {
+                serializer.PopulateFunc();
+                tempButton.ActionFuncs.Add(serializer.ActionFunc);
+            }
+            tempButton.Name = fullPressStageButton.ActionDirName;
+        }
+
+        public void PopulateFuncs()
+        {
+            List<ActionFuncSerializer> tempFuncs = new List<ActionFuncSerializer>();
+            foreach (ActionFunc tempFunc in touchDualAction.SoftPressActButton.ActionFuncs)
+            {
+                tempFuncs.Add(ActionFuncSerializerFactory.CreateSerializer(tempFunc));
+            }
+            softPressStageButton.ActionFuncSerializers.AddRange(tempFuncs);
+
+            tempFuncs.Clear();
+
+            foreach (ActionFunc tempFunc in touchDualAction.FullPressActButton.ActionFuncs)
+            {
+                tempFuncs.Add(ActionFuncSerializerFactory.CreateSerializer(tempFunc));
+            }
+
+            fullPressStageButton.ActionFuncSerializers.AddRange(tempFuncs);
         }
     }
 
@@ -1343,6 +1816,240 @@ namespace DS4MapperTest
                 return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.OUTER_RING_FULL_RANGE);
             }
 
+            public bool CounterMovementReleasePressEnabled
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.Enabled;
+                set
+                {
+                    touchActionPadAction.CounterMovementReleasePress.Enabled = value;
+                    CounterMovementReleasePressEnabledChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler CounterMovementReleasePressEnabledChanged;
+            public bool ShouldSerializeCounterMovementReleasePressEnabled()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED);
+            }
+
+            public string CounterMovementTapLengthPreset
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.TapLengthPreset.ToString();
+                set
+                {
+                    if (Enum.TryParse(value, out DS4MapperTest.StickActions.CounterMovementTapLengthPreset temp))
+                    {
+                        touchActionPadAction.CounterMovementReleasePress.TapLengthPreset = temp;
+                        CounterMovementTapLengthPresetChanged?.Invoke(this, EventArgs.Empty);
+                    }
+                }
+            }
+            public event EventHandler CounterMovementTapLengthPresetChanged;
+            public bool ShouldSerializeCounterMovementTapLengthPreset()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET);
+            }
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public OppositeTapLengthMode OppositeTapLengthMode
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMode;
+                set
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMode = value;
+                    OppositeTapLengthModeChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthModeChanged;
+            public bool ShouldSerializeOppositeTapLengthMode()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+            }
+
+            public int OppositeTapLengthMs
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMs;
+                set
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMs = value;
+                    OppositeTapLengthMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthMsChanged;
+            public bool ShouldSerializeOppositeTapLengthMs()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS);
+            }
+
+            public int OppositeTapLengthVariancePercent
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthVariancePercent;
+                set
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthVariancePercent = value;
+                    OppositeTapLengthVariancePercentChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthVariancePercentChanged;
+            public bool ShouldSerializeOppositeTapLengthVariancePercent()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT);
+            }
+
+            public int OppositeTapLengthMinimumMs
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMinimumMs;
+                set
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMinimumMs = value;
+                    OppositeTapLengthMinimumMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthMinimumMsChanged;
+            public bool ShouldSerializeOppositeTapLengthMinimumMs()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS);
+            }
+
+            public int OppositeTapLengthMaximumMs
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMaximumMs;
+                set
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMaximumMs = value;
+                    OppositeTapLengthMaximumMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthMaximumMsChanged;
+            public bool ShouldSerializeOppositeTapLengthMaximumMs()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS);
+            }
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public OppositeTapStartDelayMode OppositeTapStartDelayMode
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayMode;
+                set
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayMode = value;
+                    OppositeTapStartDelayModeChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayModeChanged;
+            public bool ShouldSerializeOppositeTapStartDelayMode()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE);
+            }
+
+            public int OppositeTapStartDelayMs
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayMs;
+                set
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayMs = value;
+                    OppositeTapStartDelayMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayMsChanged;
+            public bool ShouldSerializeOppositeTapStartDelayMs()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS);
+            }
+
+            public int OppositeTapStartDelayVariancePercent
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayVariancePercent;
+                set
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayVariancePercent = value;
+                    OppositeTapStartDelayVariancePercentChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayVariancePercentChanged;
+            public bool ShouldSerializeOppositeTapStartDelayVariancePercent()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT);
+            }
+
+            public int OppositeTapStartDelayMinimumMs
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayMinimumMs;
+                set
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayMinimumMs = value;
+                    OppositeTapStartDelayMinimumMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayMinimumMsChanged;
+            public bool ShouldSerializeOppositeTapStartDelayMinimumMs()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS);
+            }
+
+            public int OppositeTapStartDelayMaximumMs
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayMaximumMs;
+                set
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayMaximumMs = value;
+                    OppositeTapStartDelayMaximumMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayMaximumMsChanged;
+            public bool ShouldSerializeOppositeTapStartDelayMaximumMs()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS);
+            }
+
+            public bool CounterMovementDeadZoneReleaseEnabled
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.TriggerOnDeadZoneReleaseEnabled;
+                set
+                {
+                    touchActionPadAction.CounterMovementReleasePress.TriggerOnDeadZoneReleaseEnabled = value;
+                    CounterMovementDeadZoneReleaseEnabledChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler CounterMovementDeadZoneReleaseEnabledChanged;
+            public bool ShouldSerializeCounterMovementDeadZoneReleaseEnabled()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_DEADZONE_RELEASE_ENABLED);
+            }
+
+            [JsonProperty("CounterMovementMinimumHoldMs")]
+            public int CounterMovementMinimumHoldMs
+            {
+                get => touchActionPadAction.CounterMovementReleasePress.MinimumHoldMs;
+                set
+                {
+                    touchActionPadAction.CounterMovementReleasePress.MinimumHoldMs = value;
+                    CounterMovementMinimumHoldMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler CounterMovementMinimumHoldMsChanged;
+            public bool ShouldSerializeCounterMovementMinimumHoldMs()
+            {
+                return touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_MIN_HOLD_MS);
+            }
+
+            private bool? legacyBrakeEnabled;
+            internal bool? LegacyBrakeEnabled => legacyBrakeEnabled;
+            public bool BrakeEnabled
+            {
+                get => false;
+                set => legacyBrakeEnabled = value;
+            }
+            public bool ShouldSerializeBrakeEnabled() => false;
+
+            private int? legacyBrakeDurationMs;
+            internal int? LegacyBrakeDurationMs => legacyBrakeDurationMs;
+            public int BrakeDurationMs
+            {
+                get => 0;
+                set => legacyBrakeDurationMs = value;
+            }
+            public bool ShouldSerializeBrakeDurationMs() => false;
+
             public TouchpadActionPadSettings(TouchpadActionPad action)
             {
                 touchActionPadAction = action;
@@ -1416,6 +2123,90 @@ namespace DS4MapperTest
             settings.UseAsOuterRingChanged += Settings_UseAsOuterRingChanged;
             settings.OuterRingDeadZoneChanged += Settings_OuterRingDeadZoneChanged;
             settings.OuterRingRangeChanged += Settings_OuterRingRangeChanged;
+            settings.CounterMovementReleasePressEnabledChanged += Settings_CounterMovementReleasePressEnabledChanged;
+            settings.CounterMovementTapLengthPresetChanged += Settings_CounterMovementTapLengthPresetChanged;
+            settings.OppositeTapLengthModeChanged += Settings_OppositeTapLengthModeChanged;
+            settings.OppositeTapLengthMsChanged += Settings_OppositeTapLengthMsChanged;
+            settings.OppositeTapLengthVariancePercentChanged += Settings_OppositeTapLengthVariancePercentChanged;
+            settings.OppositeTapLengthMinimumMsChanged += Settings_OppositeTapLengthMinimumMsChanged;
+            settings.OppositeTapLengthMaximumMsChanged += Settings_OppositeTapLengthMaximumMsChanged;
+            settings.OppositeTapStartDelayModeChanged += Settings_OppositeTapStartDelayModeChanged;
+            settings.OppositeTapStartDelayMsChanged += Settings_OppositeTapStartDelayMsChanged;
+            settings.OppositeTapStartDelayVariancePercentChanged += Settings_OppositeTapStartDelayVariancePercentChanged;
+            settings.OppositeTapStartDelayMinimumMsChanged += Settings_OppositeTapStartDelayMinimumMsChanged;
+            settings.OppositeTapStartDelayMaximumMsChanged += Settings_OppositeTapStartDelayMaximumMsChanged;
+            settings.CounterMovementDeadZoneReleaseEnabledChanged += Settings_CounterMovementDeadZoneReleaseEnabledChanged;
+            settings.CounterMovementMinimumHoldMsChanged += Settings_CounterMovementMinimumHoldMsChanged;
+        }
+
+        private void Settings_CounterMovementReleasePressEnabledChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED);
+        }
+
+        private void Settings_CounterMovementTapLengthPresetChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET);
+        }
+
+        private void Settings_OppositeTapLengthModeChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+        }
+
+        private void Settings_OppositeTapLengthMsChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS);
+        }
+
+        private void Settings_OppositeTapLengthVariancePercentChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT);
+        }
+
+        private void Settings_OppositeTapLengthMinimumMsChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS);
+        }
+
+        private void Settings_OppositeTapLengthMaximumMsChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS);
+        }
+
+        private void Settings_OppositeTapStartDelayModeChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE);
+        }
+
+        private void Settings_OppositeTapStartDelayMsChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS);
+        }
+
+        private void Settings_OppositeTapStartDelayVariancePercentChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT);
+        }
+
+        private void Settings_OppositeTapStartDelayMinimumMsChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS);
+        }
+
+        private void Settings_OppositeTapStartDelayMaximumMsChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS);
+        }
+
+        private void Settings_CounterMovementDeadZoneReleaseEnabledChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_DEADZONE_RELEASE_ENABLED);
+        }
+
+        private void Settings_CounterMovementMinimumHoldMsChanged(object sender, EventArgs e)
+        {
+            touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_MIN_HOLD_MS);
         }
 
         private void Settings_RequiresClickChanged(object sender, EventArgs e)
@@ -1635,6 +2426,112 @@ namespace DS4MapperTest
                 touchActionPadAction.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.OUTER_RING_BUTTON);
                 //stickPadAct.RingButton.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.OUTER_RING_BUTTON);
             }
+
+            MigrateLegacyCounterMovementReleasePressFields();
+        }
+
+        // Migrates up to three profile generations for the tap-length representation:
+        // (a) current profiles that already have an explicit Minimum/Maximum range but no
+        //     Mode field (saved before timing modes existed) migrate to Minimum and Maximum
+        //     mode, deriving the best-fit Fixed/Percent representation from that range;
+        // (b) older profiles with only a legacy Brake Duration migrate to Fixed mode at that
+        //     exact duration, 0% variance, preserving the old immediate-start behaviour;
+        // (c) brand new profiles with none of the above simply keep the constructed CS2/Wait
+        //     Variance Percentage defaults untouched.
+        private void MigrateLegacyCounterMovementReleasePressFields()
+        {
+            if (settings.LegacyBrakeEnabled.HasValue &&
+                !touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED))
+            {
+                touchActionPadAction.CounterMovementReleasePress.Enabled = settings.LegacyBrakeEnabled.Value;
+                touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED);
+            }
+
+            bool modeFieldPresent = touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+
+            if (settings.LegacyBrakeDurationMs.HasValue)
+            {
+                int legacyDuration = DigitalReleasePressPulse.ClampReleasePressDurationMs(settings.LegacyBrakeDurationMs.Value);
+
+                if (!touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS))
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMinimumMs = legacyDuration;
+                    touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS);
+                }
+
+                if (!touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS))
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMaximumMs = legacyDuration;
+                    touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS);
+                }
+
+                if (!touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS))
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMs = legacyDuration;
+                    touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS);
+                }
+
+                if (!touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT))
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthVariancePercent = 0;
+                    touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT);
+                }
+
+                if (!modeFieldPresent)
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMode = OppositeTapLengthMode.Fixed;
+                    touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+                }
+
+                if (!touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS))
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayMinimumMs = 0;
+                    touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS);
+                }
+
+                if (!touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS))
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayMaximumMs = 0;
+                    touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS);
+                }
+
+                if (!touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE))
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayMode = OppositeTapStartDelayMode.Fixed;
+                    touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE);
+                }
+
+                if (!touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS))
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayMs = 0;
+                    touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS);
+                }
+
+                if (!touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT))
+                {
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapStartDelayVariancePercent = 0;
+                    touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT);
+                }
+
+                if (!touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET))
+                {
+                    touchActionPadAction.CounterMovementReleasePress.TapLengthPreset =
+                        DS4MapperTest.StickActions.CounterMovementTapLengthPreset.Custom;
+                    touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET);
+                }
+            }
+            else if (!modeFieldPresent &&
+                (touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS) ||
+                 touchActionPadAction.ChangedProperties.Contains(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS)))
+            {
+                touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMode = OppositeTapLengthMode.MinimumAndMaximum;
+                touchActionPadAction.ChangedProperties.Add(TouchpadActionPad.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+                touchActionPadAction.CounterMovementReleasePress.ApplyMinimumAndMaximum(
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMinimumMs,
+                    touchActionPadAction.CounterMovementReleasePress.OppositeTapLengthMaximumMs);
+            }
+
+            touchActionPadAction.CounterMovementReleasePress.NormalizeRanges();
         }
 
         public void FlagBtnChangedDirection(TouchpadActionPad.DpadDirections dir,
@@ -1693,6 +2590,51 @@ namespace DS4MapperTest
                 return touchMouseAct.ChangedProperties.Contains(TouchpadMouse.PropertyKeyStrings.DEAD_ZONE);
             }
 
+            public int VerticalDeadZone
+            {
+                get => touchMouseAct.VerticalDeadZone;
+                set
+                {
+                    touchMouseAct.VerticalDeadZone = Math.Clamp(value, 0, 10000);
+                    VerticalDeadZoneChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler VerticalDeadZoneChanged;
+            public bool ShouldSerializeVerticalDeadZone()
+            {
+                return touchMouseAct.ChangedProperties.Contains(TouchpadMouse.PropertyKeyStrings.VERTICAL_DEAD_ZONE);
+            }
+
+            public double TrackpadAngleSnapDegrees
+            {
+                get => touchMouseAct.TrackpadAngleSnapDegrees;
+                set
+                {
+                    touchMouseAct.TrackpadAngleSnapDegrees = Math.Clamp(value, 0.0, 45.0);
+                    TrackpadAngleSnapDegreesChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler TrackpadAngleSnapDegreesChanged;
+            public bool ShouldSerializeTrackpadAngleSnapDegrees()
+            {
+                return touchMouseAct.ChangedProperties.Contains(TouchpadMouse.PropertyKeyStrings.ANGLE_SNAP_DEGREES);
+            }
+
+            public bool TrackpadSmoothAngleSnap
+            {
+                get => touchMouseAct.TrackpadSmoothAngleSnap;
+                set
+                {
+                    touchMouseAct.TrackpadSmoothAngleSnap = value;
+                    TrackpadSmoothAngleSnapChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler TrackpadSmoothAngleSnapChanged;
+            public bool ShouldSerializeTrackpadSmoothAngleSnap()
+            {
+                return touchMouseAct.ChangedProperties.Contains(TouchpadMouse.PropertyKeyStrings.SMOOTH_ANGLE_SNAP);
+            }
+
             public bool TrackballEnabled
             {
                 get => touchMouseAct.TrackballEnabled;
@@ -1723,19 +2665,19 @@ namespace DS4MapperTest
                 return touchMouseAct.ChangedProperties.Contains(TouchpadMouse.PropertyKeyStrings.TRACKBALL_FRICTION);
             }
 
-            public double Sensitivity
+            public double SwipesPer360
             {
-                get => touchMouseAct.Sensitivity;
+                get => touchMouseAct.SwipesPer360;
                 set
                 {
-                    touchMouseAct.Sensitivity = Math.Clamp(value, 0.0, 10.0);
-                    SensitivityChanged?.Invoke(this, EventArgs.Empty);
+                    touchMouseAct.SwipesPer360 = Math.Clamp(value, 0.0, 100.0);
+                    SwipesPer360Changed?.Invoke(this, EventArgs.Empty);
                 }
             }
-            public event EventHandler SensitivityChanged;
-            public bool ShouldSerializeSensitivity()
+            public event EventHandler SwipesPer360Changed;
+            public bool ShouldSerializeSwipesPer360()
             {
-                return touchMouseAct.ChangedProperties.Contains(TouchpadMouse.PropertyKeyStrings.SENSITIVITY);
+                return touchMouseAct.ChangedProperties.Contains(TouchpadMouse.PropertyKeyStrings.SWIPES_PER_360);
             }
 
             public double VerticalScale
@@ -1800,6 +2742,494 @@ namespace DS4MapperTest
                 return touchMouseAct.ChangedProperties.Contains(TouchpadMouse.PropertyKeyStrings.SMOOTHING_FILTER);
             }
 
+            public GyroMouseAccelCurveChoice AccelCurve
+            {
+                get => touchMouseAct.AccelCurve;
+                set
+                {
+                    touchMouseAct.AccelCurve = value;
+                    AccelCurveChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler AccelCurveChanged;
+            public bool ShouldSerializeAccelCurve() =>
+                touchMouseAct.ChangedProperties.Contains(
+                    TouchpadMouse.PropertyKeyStrings.ACCEL_CURVE);
+
+            public double MinAccelXSens
+            {
+                get => touchMouseAct.MinAccelXSens;
+                set
+                {
+                    touchMouseAct.MinAccelXSens = value;
+                    MinAccelXSensChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MinAccelXSensChanged;
+            public bool ShouldSerializeMinAccelXSens() =>
+                touchMouseAct.ChangedProperties.Contains(
+                    TouchpadMouse.PropertyKeyStrings.MIN_ACCEL_X_SENS);
+
+            public double MaxAccelXSens
+            {
+                get => touchMouseAct.MaxAccelXSens;
+                set
+                {
+                    touchMouseAct.MaxAccelXSens = value;
+                    MaxAccelXSensChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MaxAccelXSensChanged;
+            public bool ShouldSerializeMaxAccelXSens() =>
+                touchMouseAct.ChangedProperties.Contains(
+                    TouchpadMouse.PropertyKeyStrings.MAX_ACCEL_X_SENS);
+
+            public double MinAccelYSens
+            {
+                get => touchMouseAct.MinAccelYSens;
+                set
+                {
+                    touchMouseAct.MinAccelYSens = value;
+                    MinAccelYSensChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MinAccelYSensChanged;
+            public bool ShouldSerializeMinAccelYSens() =>
+                touchMouseAct.ChangedProperties.Contains(
+                    TouchpadMouse.PropertyKeyStrings.MIN_ACCEL_Y_SENS);
+
+            public double MaxAccelYSens
+            {
+                get => touchMouseAct.MaxAccelYSens;
+                set
+                {
+                    touchMouseAct.MaxAccelYSens = value;
+                    MaxAccelYSensChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MaxAccelYSensChanged;
+            public bool ShouldSerializeMaxAccelYSens() =>
+                touchMouseAct.ChangedProperties.Contains(
+                    TouchpadMouse.PropertyKeyStrings.MAX_ACCEL_Y_SENS);
+
+            public double MinAccelThreshold
+            {
+                get => touchMouseAct.MinAccelThreshold;
+                set
+                {
+                    touchMouseAct.MinAccelThreshold = value;
+                    MinAccelThresholdChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MinAccelThresholdChanged;
+            public bool ShouldSerializeMinAccelThreshold() =>
+                touchMouseAct.ChangedProperties.Contains(
+                    TouchpadMouse.PropertyKeyStrings.MIN_ACCEL_THRESHOLD);
+
+            public double MaxAccelThreshold
+            {
+                get => touchMouseAct.MaxAccelThreshold;
+                set
+                {
+                    touchMouseAct.MaxAccelThreshold = value;
+                    MaxAccelThresholdChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MaxAccelThresholdChanged;
+            public bool ShouldSerializeMaxAccelThreshold() =>
+                touchMouseAct.ChangedProperties.Contains(
+                    TouchpadMouse.PropertyKeyStrings.MAX_ACCEL_THRESHOLD);
+
+            public double NaturalVHalf
+            {
+                get => touchMouseAct.NaturalVHalf;
+                set
+                {
+                    touchMouseAct.NaturalVHalf = value;
+                    NaturalVHalfChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler NaturalVHalfChanged;
+            public bool ShouldSerializeNaturalVHalf() =>
+                touchMouseAct.ChangedProperties.Contains(
+                    TouchpadMouse.PropertyKeyStrings.NATURAL_CURVE_VHALF);
+
+            public double PowerVRef
+            {
+                get => touchMouseAct.PowerVRef;
+                set
+                {
+                    touchMouseAct.PowerVRef = value;
+                    PowerVRefChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler PowerVRefChanged;
+            public bool ShouldSerializePowerVRef() =>
+                touchMouseAct.ChangedProperties.Contains(
+                    TouchpadMouse.PropertyKeyStrings.POWER_CURVE_VREF);
+
+            public double PowerExponent
+            {
+                get => touchMouseAct.PowerExponent;
+                set
+                {
+                    touchMouseAct.PowerExponent = value;
+                    PowerExponentChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler PowerExponentChanged;
+            public bool ShouldSerializePowerExponent() =>
+                touchMouseAct.ChangedProperties.Contains(
+                    TouchpadMouse.PropertyKeyStrings.POWER_CURVE_EXPONENT);
+
+            // Stability filter settings. One shared event carries the
+            // property group key so the serializer can mark ChangedProperties
+            // on deserialization. StabilityMode is declared first so a saved
+            // preset is applied before any custom values override it
+            public event EventHandler<string> StabilityGroupChanged;
+
+            private bool ShouldSerializeStabilityGroup(string key) =>
+                touchMouseAct.ChangedProperties.Contains(key);
+
+            public TouchpadStabilityMode StabilityMode
+            {
+                get => touchMouseAct.StabilitySettings.Mode;
+                set
+                {
+                    touchMouseAct.StabilitySettings.ApplyPreset(value);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_MODE);
+                }
+            }
+            public bool ShouldSerializeStabilityMode() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_MODE);
+
+            public double StabilityTouchSettleMs
+            {
+                get => touchMouseAct.StabilitySettings.TouchSettleMs;
+                set
+                {
+                    touchMouseAct.StabilitySettings.TouchSettleMs =
+                        Math.Clamp(value, 0.0, 30.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_TOUCH_SETTLE);
+                }
+            }
+            public bool ShouldSerializeStabilityTouchSettleMs() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_TOUCH_SETTLE);
+
+            public double StabilityBaseNoiseFloor
+            {
+                get => touchMouseAct.StabilitySettings.BaseNoiseFloor;
+                set
+                {
+                    touchMouseAct.StabilitySettings.BaseNoiseFloor =
+                        Math.Clamp(value, 0.0, 100.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_NOISE);
+                }
+            }
+            public bool ShouldSerializeStabilityBaseNoiseFloor() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_NOISE);
+
+            public double StabilityHysteresisExitMultiplier
+            {
+                get => touchMouseAct.StabilitySettings.HysteresisExitMultiplier;
+                set
+                {
+                    touchMouseAct.StabilitySettings.HysteresisExitMultiplier =
+                        Math.Clamp(value, 1.0, 3.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_NOISE);
+                }
+            }
+            public bool ShouldSerializeStabilityHysteresisExitMultiplier() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_NOISE);
+
+            public double StabilityFastPassthroughThreshold
+            {
+                get => touchMouseAct.StabilitySettings.FastPassthroughThreshold;
+                set
+                {
+                    touchMouseAct.StabilitySettings.FastPassthroughThreshold =
+                        Math.Clamp(value, 0.0, 200.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_NOISE);
+                }
+            }
+            public bool ShouldSerializeStabilityFastPassthroughThreshold() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_NOISE);
+
+            public bool StabilityEdgeGuardEnabled
+            {
+                get => touchMouseAct.StabilitySettings.EdgeGuardEnabled;
+                set
+                {
+                    touchMouseAct.StabilitySettings.EdgeGuardEnabled = value;
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityEdgeGuardEnabled() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityLeftEdgePercent
+            {
+                get => touchMouseAct.StabilitySettings.LeftEdgePercent;
+                set
+                {
+                    touchMouseAct.StabilitySettings.LeftEdgePercent =
+                        Math.Clamp(value, 0.0, 30.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityLeftEdgePercent() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityRightEdgePercent
+            {
+                get => touchMouseAct.StabilitySettings.RightEdgePercent;
+                set
+                {
+                    touchMouseAct.StabilitySettings.RightEdgePercent =
+                        Math.Clamp(value, 0.0, 30.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityRightEdgePercent() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityTopEdgePercent
+            {
+                get => touchMouseAct.StabilitySettings.TopEdgePercent;
+                set
+                {
+                    touchMouseAct.StabilitySettings.TopEdgePercent =
+                        Math.Clamp(value, 0.0, 30.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityTopEdgePercent() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityBottomEdgePercent
+            {
+                get => touchMouseAct.StabilitySettings.BottomEdgePercent;
+                set
+                {
+                    touchMouseAct.StabilitySettings.BottomEdgePercent =
+                        Math.Clamp(value, 0.0, 30.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityBottomEdgePercent() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityEdgeJitterMultiplier
+            {
+                get => touchMouseAct.StabilitySettings.EdgeJitterMultiplier;
+                set
+                {
+                    touchMouseAct.StabilitySettings.EdgeJitterMultiplier =
+                        Math.Clamp(value, 1.0, 5.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityEdgeJitterMultiplier() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityCornerJitterMultiplier
+            {
+                get => touchMouseAct.StabilitySettings.CornerJitterMultiplier;
+                set
+                {
+                    touchMouseAct.StabilitySettings.CornerJitterMultiplier =
+                        Math.Clamp(value, 1.0, 5.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityCornerJitterMultiplier() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityTopLeftCornerMultiplier
+            {
+                get => touchMouseAct.StabilitySettings.TopLeftCornerMultiplier;
+                set
+                {
+                    touchMouseAct.StabilitySettings.TopLeftCornerMultiplier =
+                        Math.Clamp(value, 1.0, 6.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityTopLeftCornerMultiplier() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityEdgeHysteresisPercent
+            {
+                get => touchMouseAct.StabilitySettings.EdgeHysteresisPercent;
+                set
+                {
+                    touchMouseAct.StabilitySettings.EdgeHysteresisPercent =
+                        Math.Clamp(value, 0.0, 10.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityEdgeHysteresisPercent() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public bool StabilityEdgeLockEnabled
+            {
+                get => touchMouseAct.StabilitySettings.EdgeLockEnabled;
+                set
+                {
+                    touchMouseAct.StabilitySettings.EdgeLockEnabled = value;
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityEdgeLockEnabled() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public bool StabilityEdgeStartGateEnabled
+            {
+                get => touchMouseAct.StabilitySettings.EdgeStartGateEnabled;
+                set
+                {
+                    touchMouseAct.StabilitySettings.EdgeStartGateEnabled = value;
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_START_GATE);
+                }
+            }
+            public bool ShouldSerializeStabilityEdgeStartGateEnabled() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_START_GATE);
+
+            public double StabilityEdgeStartThreshold
+            {
+                get => touchMouseAct.StabilitySettings.EdgeStartThreshold;
+                set
+                {
+                    touchMouseAct.StabilitySettings.EdgeStartThreshold =
+                        Math.Clamp(value, 0.0, 300.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_START_GATE);
+                }
+            }
+            public bool ShouldSerializeStabilityEdgeStartThreshold() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_EDGE_START_GATE);
+
+            public bool StabilityStationaryHoldEnabled
+            {
+                get => touchMouseAct.StabilitySettings.StationaryHoldEnabled;
+                set
+                {
+                    touchMouseAct.StabilitySettings.StationaryHoldEnabled = value;
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_STATIONARY);
+                }
+            }
+            public bool ShouldSerializeStabilityStationaryHoldEnabled() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_STATIONARY);
+
+            public double StabilityStationaryDetectionMs
+            {
+                get => touchMouseAct.StabilitySettings.StationaryDetectionMs;
+                set
+                {
+                    touchMouseAct.StabilitySettings.StationaryDetectionMs =
+                        Math.Clamp(value, 0.0, 200.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_STATIONARY);
+                }
+            }
+            public bool ShouldSerializeStabilityStationaryDetectionMs() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_STATIONARY);
+
+            public double StabilityStationaryNoiseMultiplier
+            {
+                get => touchMouseAct.StabilitySettings.StationaryNoiseMultiplier;
+                set
+                {
+                    touchMouseAct.StabilitySettings.StationaryNoiseMultiplier =
+                        Math.Clamp(value, 1.0, 4.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_STATIONARY);
+                }
+            }
+            public bool ShouldSerializeStabilityStationaryNoiseMultiplier() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_STATIONARY);
+
+            public double StabilityStationaryBreakoutThreshold
+            {
+                get => touchMouseAct.StabilitySettings.StationaryBreakoutThreshold;
+                set
+                {
+                    touchMouseAct.StabilitySettings.StationaryBreakoutThreshold =
+                        Math.Clamp(value, 0.0, 200.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_STATIONARY);
+                }
+            }
+            public bool ShouldSerializeStabilityStationaryBreakoutThreshold() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_STATIONARY);
+
+            public bool StabilityDeltaClampEnabled
+            {
+                get => touchMouseAct.StabilitySettings.DeltaClampEnabled;
+                set
+                {
+                    touchMouseAct.StabilitySettings.DeltaClampEnabled = value;
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_DELTA_CLAMP);
+                }
+            }
+            public bool ShouldSerializeStabilityDeltaClampEnabled() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_DELTA_CLAMP);
+
+            public double StabilityMaxDeltaPerFrame
+            {
+                get => touchMouseAct.StabilitySettings.MaxDeltaPerFrame;
+                set
+                {
+                    touchMouseAct.StabilitySettings.MaxDeltaPerFrame =
+                        Math.Clamp(value, 10.0, 500.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouse.PropertyKeyStrings.STABILITY_DELTA_CLAMP);
+                }
+            }
+            public bool ShouldSerializeStabilityMaxDeltaPerFrame() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouse.PropertyKeyStrings.STABILITY_DELTA_CLAMP);
+
             public TouchpadMouseSettings(TouchpadMouse action)
             {
                 touchMouseAct = action;
@@ -1827,18 +3257,78 @@ namespace DS4MapperTest
 
             NameChanged += TouchpadMouseSerializer_NameChanged;
             settings.DeadZoneChanged += Settings_DeadZoneChanged;
+            settings.VerticalDeadZoneChanged += Settings_VerticalDeadZoneChanged;
+            settings.TrackpadAngleSnapDegreesChanged += Settings_TrackpadAngleSnapDegreesChanged;
+            settings.TrackpadSmoothAngleSnapChanged += Settings_TrackpadSmoothAngleSnapChanged;
             settings.TrackballEnabledChanged += Settings_TrackballEnabledChanged;
             settings.TrackballFrictionChanged += Settings_TrackballFrictionChanged;
-            settings.SensitivityChanged += Settings_SensitivityChanged;
+            settings.SwipesPer360Changed += Settings_SwipesPer360Changed;
             settings.VerticalScaleChanged += Settings_VerticalScaleChanged;
             settings.SmoothingEnabledChanged += Settings_SmoothingEnabledChanged;
             settings.SmoothingMinCutoffChanged += Settings_SmoothingMinCutoffChanged;
             settings.SmoothingBetaChanged += Settings_SmoothingBetaChanged;
+            settings.AccelCurveChanged += Settings_AccelCurveChanged;
+            settings.MinAccelXSensChanged += Settings_MinAccelXSensChanged;
+            settings.MaxAccelXSensChanged += Settings_MaxAccelXSensChanged;
+            settings.MinAccelYSensChanged += Settings_MinAccelYSensChanged;
+            settings.MaxAccelYSensChanged += Settings_MaxAccelYSensChanged;
+            settings.MinAccelThresholdChanged += Settings_MinAccelThresholdChanged;
+            settings.MaxAccelThresholdChanged += Settings_MaxAccelThresholdChanged;
+            settings.NaturalVHalfChanged += Settings_NaturalVHalfChanged;
+            settings.PowerVRefChanged += Settings_PowerVRefChanged;
+            settings.PowerExponentChanged += Settings_PowerExponentChanged;
+            settings.StabilityGroupChanged += Settings_StabilityGroupChanged;
         }
+
+        private void Settings_StabilityGroupChanged(object sender, string propertyGroup)
+        {
+            touchMouseAction.ChangedProperties.Add(propertyGroup);
+        }
+
+        private void Settings_AccelCurveChanged(object sender, EventArgs e) =>
+            touchMouseAction.ChangedProperties.Add(
+                TouchpadMouse.PropertyKeyStrings.ACCEL_CURVE);
+        private void Settings_MinAccelXSensChanged(object sender, EventArgs e) =>
+            touchMouseAction.ChangedProperties.Add(
+                TouchpadMouse.PropertyKeyStrings.MIN_ACCEL_X_SENS);
+        private void Settings_MaxAccelXSensChanged(object sender, EventArgs e) =>
+            touchMouseAction.ChangedProperties.Add(
+                TouchpadMouse.PropertyKeyStrings.MAX_ACCEL_X_SENS);
+        private void Settings_MinAccelYSensChanged(object sender, EventArgs e) =>
+            touchMouseAction.ChangedProperties.Add(
+                TouchpadMouse.PropertyKeyStrings.MIN_ACCEL_Y_SENS);
+        private void Settings_MaxAccelYSensChanged(object sender, EventArgs e) =>
+            touchMouseAction.ChangedProperties.Add(
+                TouchpadMouse.PropertyKeyStrings.MAX_ACCEL_Y_SENS);
+        private void Settings_MinAccelThresholdChanged(object sender, EventArgs e) =>
+            touchMouseAction.ChangedProperties.Add(
+                TouchpadMouse.PropertyKeyStrings.MIN_ACCEL_THRESHOLD);
+        private void Settings_MaxAccelThresholdChanged(object sender, EventArgs e) =>
+            touchMouseAction.ChangedProperties.Add(
+                TouchpadMouse.PropertyKeyStrings.MAX_ACCEL_THRESHOLD);
+        private void Settings_NaturalVHalfChanged(object sender, EventArgs e) =>
+            touchMouseAction.ChangedProperties.Add(
+                TouchpadMouse.PropertyKeyStrings.NATURAL_CURVE_VHALF);
+        private void Settings_PowerVRefChanged(object sender, EventArgs e) =>
+            touchMouseAction.ChangedProperties.Add(
+                TouchpadMouse.PropertyKeyStrings.POWER_CURVE_VREF);
+        private void Settings_PowerExponentChanged(object sender, EventArgs e) =>
+            touchMouseAction.ChangedProperties.Add(
+                TouchpadMouse.PropertyKeyStrings.POWER_CURVE_EXPONENT);
 
         private void Settings_SmoothingBetaChanged(object sender, EventArgs e)
         {
             touchMouseAction.ChangedProperties.Add(TouchpadMouse.PropertyKeyStrings.SMOOTHING_FILTER);
+        }
+
+        private void Settings_TrackpadAngleSnapDegreesChanged(object sender, EventArgs e)
+        {
+            touchMouseAction.ChangedProperties.Add(TouchpadMouse.PropertyKeyStrings.ANGLE_SNAP_DEGREES);
+        }
+
+        private void Settings_TrackpadSmoothAngleSnapChanged(object sender, EventArgs e)
+        {
+            touchMouseAction.ChangedProperties.Add(TouchpadMouse.PropertyKeyStrings.SMOOTH_ANGLE_SNAP);
         }
 
         private void Settings_SmoothingMinCutoffChanged(object sender, EventArgs e)
@@ -1856,9 +3346,9 @@ namespace DS4MapperTest
             touchMouseAction.ChangedProperties.Add(TouchpadMouse.PropertyKeyStrings.VERTICAL_SCALE);
         }
 
-        private void Settings_SensitivityChanged(object sender, EventArgs e)
+        private void Settings_SwipesPer360Changed(object sender, EventArgs e)
         {
-            touchMouseAction.ChangedProperties.Add(TouchpadMouse.PropertyKeyStrings.SENSITIVITY);
+            touchMouseAction.ChangedProperties.Add(TouchpadMouse.PropertyKeyStrings.SWIPES_PER_360);
         }
 
         private void Settings_TrackballFrictionChanged(object sender, EventArgs e)
@@ -1874,6 +3364,11 @@ namespace DS4MapperTest
         private void Settings_DeadZoneChanged(object sender, EventArgs e)
         {
             touchMouseAction.ChangedProperties.Add(TouchpadMouse.PropertyKeyStrings.DEAD_ZONE);
+        }
+
+        private void Settings_VerticalDeadZoneChanged(object sender, EventArgs e)
+        {
+            touchMouseAction.ChangedProperties.Add(TouchpadMouse.PropertyKeyStrings.VERTICAL_DEAD_ZONE);
         }
 
         private void TouchpadMouseSerializer_NameChanged(object sender, EventArgs e)
@@ -2146,6 +3641,350 @@ namespace DS4MapperTest
                 return touchMouseJoyAction.ChangedProperties.Contains(TouchpadMouseJoystick.PropertyKeyStrings.SMOOTHING_FILTER);
             }
 
+            public event EventHandler<string> StabilityGroupChanged;
+
+            private bool ShouldSerializeStabilityGroup(string key) =>
+                touchMouseJoyAction.ChangedProperties.Contains(key);
+
+            public TouchpadStabilityMode StabilityMode
+            {
+                get => touchMouseJoyAction.StabilitySettings.Mode;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.ApplyPreset(value);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_MODE);
+                }
+            }
+            public bool ShouldSerializeStabilityMode() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_MODE);
+
+            public double StabilityTouchSettleMs
+            {
+                get => touchMouseJoyAction.StabilitySettings.TouchSettleMs;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.TouchSettleMs =
+                        Math.Clamp(value, 0.0, 30.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_TOUCH_SETTLE);
+                }
+            }
+            public bool ShouldSerializeStabilityTouchSettleMs() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_TOUCH_SETTLE);
+
+            public double StabilityBaseNoiseFloor
+            {
+                get => touchMouseJoyAction.StabilitySettings.BaseNoiseFloor;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.BaseNoiseFloor =
+                        Math.Clamp(value, 0.0, 100.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_NOISE);
+                }
+            }
+            public bool ShouldSerializeStabilityBaseNoiseFloor() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_NOISE);
+
+            public double StabilityHysteresisExitMultiplier
+            {
+                get => touchMouseJoyAction.StabilitySettings.HysteresisExitMultiplier;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.HysteresisExitMultiplier =
+                        Math.Clamp(value, 1.0, 3.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_NOISE);
+                }
+            }
+            public bool ShouldSerializeStabilityHysteresisExitMultiplier() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_NOISE);
+
+            public double StabilityFastPassthroughThreshold
+            {
+                get => touchMouseJoyAction.StabilitySettings.FastPassthroughThreshold;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.FastPassthroughThreshold =
+                        Math.Clamp(value, 0.0, 200.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_NOISE);
+                }
+            }
+            public bool ShouldSerializeStabilityFastPassthroughThreshold() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_NOISE);
+
+            public bool StabilityEdgeGuardEnabled
+            {
+                get => touchMouseJoyAction.StabilitySettings.EdgeGuardEnabled;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.EdgeGuardEnabled = value;
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityEdgeGuardEnabled() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityLeftEdgePercent
+            {
+                get => touchMouseJoyAction.StabilitySettings.LeftEdgePercent;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.LeftEdgePercent =
+                        Math.Clamp(value, 0.0, 30.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityLeftEdgePercent() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityRightEdgePercent
+            {
+                get => touchMouseJoyAction.StabilitySettings.RightEdgePercent;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.RightEdgePercent =
+                        Math.Clamp(value, 0.0, 30.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityRightEdgePercent() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityTopEdgePercent
+            {
+                get => touchMouseJoyAction.StabilitySettings.TopEdgePercent;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.TopEdgePercent =
+                        Math.Clamp(value, 0.0, 30.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityTopEdgePercent() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityBottomEdgePercent
+            {
+                get => touchMouseJoyAction.StabilitySettings.BottomEdgePercent;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.BottomEdgePercent =
+                        Math.Clamp(value, 0.0, 30.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityBottomEdgePercent() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityEdgeJitterMultiplier
+            {
+                get => touchMouseJoyAction.StabilitySettings.EdgeJitterMultiplier;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.EdgeJitterMultiplier =
+                        Math.Clamp(value, 1.0, 5.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityEdgeJitterMultiplier() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityCornerJitterMultiplier
+            {
+                get => touchMouseJoyAction.StabilitySettings.CornerJitterMultiplier;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.CornerJitterMultiplier =
+                        Math.Clamp(value, 1.0, 5.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityCornerJitterMultiplier() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityTopLeftCornerMultiplier
+            {
+                get => touchMouseJoyAction.StabilitySettings.TopLeftCornerMultiplier;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.TopLeftCornerMultiplier =
+                        Math.Clamp(value, 1.0, 6.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityTopLeftCornerMultiplier() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public double StabilityEdgeHysteresisPercent
+            {
+                get => touchMouseJoyAction.StabilitySettings.EdgeHysteresisPercent;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.EdgeHysteresisPercent =
+                        Math.Clamp(value, 0.0, 10.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityEdgeHysteresisPercent() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public bool StabilityEdgeLockEnabled
+            {
+                get => touchMouseJoyAction.StabilitySettings.EdgeLockEnabled;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.EdgeLockEnabled = value;
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+                }
+            }
+            public bool ShouldSerializeStabilityEdgeLockEnabled() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_GUARD);
+
+            public bool StabilityEdgeStartGateEnabled
+            {
+                get => touchMouseJoyAction.StabilitySettings.EdgeStartGateEnabled;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.EdgeStartGateEnabled = value;
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_START_GATE);
+                }
+            }
+            public bool ShouldSerializeStabilityEdgeStartGateEnabled() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_START_GATE);
+
+            public double StabilityEdgeStartThreshold
+            {
+                get => touchMouseJoyAction.StabilitySettings.EdgeStartThreshold;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.EdgeStartThreshold =
+                        Math.Clamp(value, 0.0, 300.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_START_GATE);
+                }
+            }
+            public bool ShouldSerializeStabilityEdgeStartThreshold() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_EDGE_START_GATE);
+
+            public bool StabilityStationaryHoldEnabled
+            {
+                get => touchMouseJoyAction.StabilitySettings.StationaryHoldEnabled;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.StationaryHoldEnabled = value;
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_STATIONARY);
+                }
+            }
+            public bool ShouldSerializeStabilityStationaryHoldEnabled() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_STATIONARY);
+
+            public double StabilityStationaryDetectionMs
+            {
+                get => touchMouseJoyAction.StabilitySettings.StationaryDetectionMs;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.StationaryDetectionMs =
+                        Math.Clamp(value, 0.0, 200.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_STATIONARY);
+                }
+            }
+            public bool ShouldSerializeStabilityStationaryDetectionMs() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_STATIONARY);
+
+            public double StabilityStationaryNoiseMultiplier
+            {
+                get => touchMouseJoyAction.StabilitySettings.StationaryNoiseMultiplier;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.StationaryNoiseMultiplier =
+                        Math.Clamp(value, 1.0, 4.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_STATIONARY);
+                }
+            }
+            public bool ShouldSerializeStabilityStationaryNoiseMultiplier() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_STATIONARY);
+
+            public double StabilityStationaryBreakoutThreshold
+            {
+                get => touchMouseJoyAction.StabilitySettings.StationaryBreakoutThreshold;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.StationaryBreakoutThreshold =
+                        Math.Clamp(value, 0.0, 200.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_STATIONARY);
+                }
+            }
+            public bool ShouldSerializeStabilityStationaryBreakoutThreshold() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_STATIONARY);
+
+            public bool StabilityDeltaClampEnabled
+            {
+                get => touchMouseJoyAction.StabilitySettings.DeltaClampEnabled;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.DeltaClampEnabled = value;
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_DELTA_CLAMP);
+                }
+            }
+            public bool ShouldSerializeStabilityDeltaClampEnabled() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_DELTA_CLAMP);
+
+            public double StabilityMaxDeltaPerFrame
+            {
+                get => touchMouseJoyAction.StabilitySettings.MaxDeltaPerFrame;
+                set
+                {
+                    touchMouseJoyAction.StabilitySettings.MaxDeltaPerFrame =
+                        Math.Clamp(value, 10.0, 500.0);
+                    StabilityGroupChanged?.Invoke(this,
+                        TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_DELTA_CLAMP);
+                }
+            }
+            public bool ShouldSerializeStabilityMaxDeltaPerFrame() =>
+                ShouldSerializeStabilityGroup(
+                    TouchpadMouseJoystick.PropertyKeyStrings.STABILITY_DELTA_CLAMP);
+
             public TouchpadMouseJoystickSettings(TouchpadMouseJoystick action)
             {
                 touchMouseJoyAction = action;
@@ -2188,6 +4027,12 @@ namespace DS4MapperTest
             settings.SmoothingEnabledChanged += Settings_SmoothingEnabledChanged;
             settings.SmoothingMinCutoffChanged += Settings_SmoothingMinCutoffChanged;
             settings.SmoothingBetaChanged += Settings_SmoothingBetaChanged;
+            settings.StabilityGroupChanged += Settings_StabilityGroupChanged;
+        }
+
+        private void Settings_StabilityGroupChanged(object sender, string propertyGroup)
+        {
+            touchMouseJoyAction.ChangedProperties.Add(propertyGroup);
         }
 
         private void Settings_JitterCompensationChanged(object sender, EventArgs e)
@@ -2785,19 +4630,19 @@ namespace DS4MapperTest
                 return touchStickAction.ChangedProperties.Contains(TouchpadStickAction.PropertyKeyStrings.SQUARE_STICK_ROUNDNESS);
             }
 
-            public bool ForcedCenter
+            public bool ForceCenter
             {
-                get => touchStickAction.ForcedCenter;
+                get => touchStickAction.ForceCenter;
                 set
                 {
-                    touchStickAction.ForcedCenter = value;
-                    ForcedCenterChanged?.Invoke(this, EventArgs.Empty);
+                    touchStickAction.ForceCenter = value;
+                    ForceCenterChanged?.Invoke(this, EventArgs.Empty);
                 }
             }
-            public event EventHandler ForcedCenterChanged;
-            public bool ShouldSerializeForcedCenter()
+            public event EventHandler ForceCenterChanged;
+            public bool ShouldSerializeForceCenter()
             {
-                return touchStickAction.ChangedProperties.Contains(TouchpadStickAction.PropertyKeyStrings.FORCED_CENTER);
+                return touchStickAction.ChangedProperties.Contains(TouchpadStickAction.PropertyKeyStrings.FORCE_CENTER);
             }
 
             [JsonProperty("UseOuterRing")]
@@ -2965,7 +4810,7 @@ namespace DS4MapperTest
             settings.SquareStickEnabledChanged += Settings_SquareStickEnabledChanged;
             settings.SquareStickRoundnessChanged += Settings_SquareStickRoundnessChanged;
             settings.DeadZoneTypeChanged += Settings_DeadZoneTypeChanged;
-            settings.ForcedCenterChanged += Settings_ForcedCenterChanged;
+            settings.ForceCenterChanged += Settings_ForceCenterChanged;
 
             settings.UseOuterRingChanged += Settings_UseOuterRingChanged;
             settings.UseAsOuterRingChanged += Settings_UseAsOuterRingChanged;
@@ -3017,9 +4862,9 @@ namespace DS4MapperTest
             touchStickAction.ChangedProperties.Add(TouchpadStickAction.PropertyKeyStrings.SMOOTHING_ENABLED);
         }
 
-        private void Settings_ForcedCenterChanged(object sender, EventArgs e)
+        private void Settings_ForceCenterChanged(object sender, EventArgs e)
         {
-            touchStickAction.ChangedProperties.Add(TouchpadStickAction.PropertyKeyStrings.FORCED_CENTER);
+            touchStickAction.ChangedProperties.Add(TouchpadStickAction.PropertyKeyStrings.FORCE_CENTER);
         }
 
         private void Settings_DeadZoneTypeChanged(object sender, EventArgs e)
@@ -3200,16 +5045,16 @@ namespace DS4MapperTest
             }
             public event EventHandler MaxZoneChanged;
 
-            public double AntiRadius
+            public double AntiRelease
             {
-                get => touchAbsAct.AntiRadius;
+                get => touchAbsAct.AntiRelease;
                 set
                 {
-                    touchAbsAct.AntiRadius = Math.Clamp(value, 0.0, 1.0);
-                    AntiRadiusChanged?.Invoke(this, EventArgs.Empty);
+                    touchAbsAct.AntiRelease = Math.Clamp(value, 0.0, 1.0);
+                    AntiReleaseChanged?.Invoke(this, EventArgs.Empty);
                 }
             }
-            public event EventHandler AntiRadiusChanged;
+            public event EventHandler AntiReleaseChanged;
 
             [JsonProperty("UseOuterRing")]
             public bool UseOuterRing
@@ -3356,7 +5201,7 @@ namespace DS4MapperTest
             RingBindingChanged += TouchpadAbsActionSerializer_RingBindingChanged;
             settings.DeadZoneChanged += Settings_DeadZoneChanged;
             settings.MaxZoneChanged += Settings_MaxZoneChanged;
-            settings.AntiRadiusChanged += Settings_AntiReleaseChanged;
+            settings.AntiReleaseChanged += Settings_AntiReleaseChanged;
             settings.UseAsOuterRingChanged += Settings_UseAsOuterRingChanged;
             settings.UseOuterRingChanged += Settings_UseOuterRingChanged;
             settings.OuterRingDeadZoneChanged += Settings_OuterRingDeadZoneChanged;
@@ -3371,7 +5216,7 @@ namespace DS4MapperTest
 
         private void Settings_AntiReleaseChanged(object sender, EventArgs e)
         {
-            touchAbsAct.ChangedProperties.Add(TouchpadAbsAction.PropertyKeyStrings.ANTI_RADIUS);
+            touchAbsAct.ChangedProperties.Add(TouchpadAbsAction.PropertyKeyStrings.ANTI_RELEASE);
         }
 
         private void Settings_MaxZoneChanged(object sender, EventArgs e)
@@ -4026,6 +5871,26 @@ namespace DS4MapperTest
         }
     }
 
+    public class TouchpadPassthruActionSerializer : MapActionSerializer
+    {
+        private TouchpadPassthruAction touchPassthruAction = new TouchpadPassthruAction();
+
+        public TouchpadPassthruActionSerializer() : base()
+        {
+            mapAction = touchPassthruAction;
+        }
+
+        public TouchpadPassthruActionSerializer(ActionLayer tempLayer, MapAction action) :
+            base(tempLayer, action)
+        {
+            if (action is TouchpadPassthruAction temp)
+            {
+                touchPassthruAction = temp;
+                mapAction = touchPassthruAction;
+            }
+        }
+    }
+
 
     public class TouchpadFlickStickActionSerializer : MapActionSerializer
     {
@@ -4042,10 +5907,7 @@ namespace DS4MapperTest
             }
             public event EventHandler RealWorldCalibrationChanged;
 
-            public bool ShouldSerializeRealWorldCalibration()
-            {
-                return flickAction.ChangedProperties.Contains(TouchpadFlickStick.PropertyKeyStrings.REAL_WORLD_CALIBRATION);
-            }
+            public bool ShouldSerializeRealWorldCalibration() => false;
 
             public double FlickThreshold
             {
@@ -4079,6 +5941,22 @@ namespace DS4MapperTest
                 return flickAction.ChangedProperties.Contains(TouchpadFlickStick.PropertyKeyStrings.FLICK_TIME);
             }
 
+            public double FlickTimeExponent
+            {
+                get => flickAction.FlickTimeExponent;
+                set
+                {
+                    flickAction.FlickTimeExponent = value;
+                    FlickTimeExponentChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler FlickTimeExponentChanged;
+
+            public bool ShouldSerializeFlickTimeExponent()
+            {
+                return flickAction.ChangedProperties.Contains(TouchpadFlickStick.PropertyKeyStrings.FLICK_TIME_EXPONENT);
+            }
+
             public double MinAngleThreshold
             {
                 get => flickAction.MinAngleThreshold;
@@ -4100,26 +5978,137 @@ namespace DS4MapperTest
                 get => flickAction.InGameSens;
                 set
                 {
-                    flickAction.MinAngleThreshold = value;
+                    flickAction.InGameSens = value;
                     InGameSensChanged?.Invoke(this, EventArgs.Empty);
                 }
             }
             public event EventHandler InGameSensChanged;
 
-            public bool ShouldSerializeInGameSens()
+            public bool ShouldSerializeInGameSens() => false;
+
+            public double ReleaseDampeningSpeed
             {
-                return flickAction.ChangedProperties.Contains(TouchpadFlickStick.PropertyKeyStrings.IN_GAME_SENS);
+                get => flickAction.ReleaseDampeningSpeed;
+                set
+                {
+                    flickAction.ReleaseDampeningSpeed = value;
+                    ReleaseDampeningSpeedChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler ReleaseDampeningSpeedChanged;
+
+            public bool ShouldSerializeReleaseDampeningSpeed()
+            {
+                return flickAction.ChangedProperties.Contains(TouchpadFlickStick.PropertyKeyStrings.RELEASE_DAMPENING_SPEED);
             }
 
-            public FlickStickSettings(StickFlickStick flickAction)
+            public bool MultiplierCompensation
+            {
+                get => flickAction.MultiplierCompensation;
+                set
+                {
+                    flickAction.MultiplierCompensation = value;
+                    MultiplierCompensationChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MultiplierCompensationChanged;
+
+            public bool ShouldSerializeMultiplierCompensation()
+            {
+                return flickAction.ChangedProperties.Contains(TouchpadFlickStick.PropertyKeyStrings.MULTIPLIER_COMPENSATION);
+            }
+
+            public double AccelerationMultiplier
+            {
+                get => flickAction.AccelerationMultiplier;
+                set
+                {
+                    flickAction.AccelerationMultiplier = value;
+                    AccelerationMultiplierChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler AccelerationMultiplierChanged;
+
+            public bool ShouldSerializeAccelerationMultiplier()
+            {
+                return flickAction.MultiplierCompensation ||
+                    flickAction.ChangedProperties.Contains(TouchpadFlickStick.PropertyKeyStrings.ACCELERATION_MULTIPLIER);
+            }
+
+            public double SweepSensitivity
+            {
+                get => flickAction.SweepSensitivity;
+                set
+                {
+                    flickAction.SweepSensitivity = value;
+                    SweepSensitivityChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler SweepSensitivityChanged;
+
+            public bool ShouldSerializeSweepSensitivity()
+            {
+                return flickAction.ChangedProperties.Contains(TouchpadFlickStick.PropertyKeyStrings.SWEEP_SENSITIVITY);
+            }
+
+            public double FrontAngleDeadzone
+            {
+                get => flickAction.FrontAngleDeadzone;
+                set
+                {
+                    flickAction.FrontAngleDeadzone = value;
+                    FrontAngleDeadzoneChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler FrontAngleDeadzoneChanged;
+
+            public bool ShouldSerializeFrontAngleDeadzone()
+            {
+                return flickAction.ChangedProperties.Contains(TouchpadFlickStick.PropertyKeyStrings.FRONT_ANGLE_DEADZONE);
+            }
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public FlickSnapAngle SnapAngle
+            {
+                get => flickAction.SnapAngle;
+                set
+                {
+                    flickAction.SnapAngle = value;
+                    SnapAngleChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler SnapAngleChanged;
+
+            public bool ShouldSerializeSnapAngle()
+            {
+                return flickAction.ChangedProperties.Contains(TouchpadFlickStick.PropertyKeyStrings.SNAP_ANGLE);
+            }
+
+            public double SnapStrength
+            {
+                get => flickAction.SnapStrength;
+                set
+                {
+                    flickAction.SnapStrength = value;
+                    SnapStrengthChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler SnapStrengthChanged;
+
+            public bool ShouldSerializeSnapStrength()
+            {
+                return flickAction.ChangedProperties.Contains(TouchpadFlickStick.PropertyKeyStrings.SNAP_STRENGTH);
+            }
+
+            public FlickStickSettings(TouchpadFlickStick flickAction)
             {
                 this.flickAction = flickAction;
             }
 
-            private StickFlickStick flickAction;
+            private TouchpadFlickStick flickAction;
         }
 
-        private StickFlickStick flickAction = new StickFlickStick();
+        private TouchpadFlickStick flickAction = new TouchpadFlickStick();
         private FlickStickSettings settings;
         public FlickStickSettings Settings { get => settings; set => settings = value; }
 
@@ -4128,18 +6117,37 @@ namespace DS4MapperTest
             mapAction = flickAction;
             settings = new FlickStickSettings(flickAction);
 
+
             NameChanged += TouchpadFlickStickActionSerializer_NameChanged;
             settings.RealWorldCalibrationChanged += Settings_RealWorldCalibrationChanged;
             settings.FlickThresholdChanged += Settings_FlickThresholdChanged;
             settings.FlickTimeChanged += Settings_FlickTimeChanged;
+            settings.FlickTimeExponentChanged += Settings_FlickTimeExponentChanged;
             settings.MinAngleThresholdChanged += Settings_MinAngleThresholdChanged;
             settings.InGameSensChanged += Settings_InGameSensChanged;
+            settings.ReleaseDampeningSpeedChanged += Settings_ReleaseDampeningSpeedChanged;
+            settings.MultiplierCompensationChanged += Settings_MultiplierCompensationChanged;
+            settings.AccelerationMultiplierChanged += Settings_AccelerationMultiplierChanged;
+            settings.SweepSensitivityChanged += Settings_SweepSensitivityChanged;
+            settings.FrontAngleDeadzoneChanged += Settings_FrontAngleDeadzoneChanged;
+            settings.SnapAngleChanged += Settings_SnapAngleChanged;
+            settings.SnapStrengthChanged += Settings_SnapStrengthChanged;
+        }
+
+        private void Settings_SnapAngleChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(TouchpadFlickStick.PropertyKeyStrings.SNAP_ANGLE);
+        }
+
+        private void Settings_SnapStrengthChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(TouchpadFlickStick.PropertyKeyStrings.SNAP_STRENGTH);
         }
 
         public TouchpadFlickStickActionSerializer(ActionLayer tempLayer, MapAction action) :
             base(tempLayer, action)
         {
-            if (action is StickFlickStick temp)
+            if (action is TouchpadFlickStick temp)
             {
                 flickAction = temp;
                 mapAction = flickAction;
@@ -4172,9 +6180,39 @@ namespace DS4MapperTest
             flickAction.ChangedProperties.Add(TouchpadFlickStick.PropertyKeyStrings.FLICK_TIME);
         }
 
+        private void Settings_FlickTimeExponentChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(TouchpadFlickStick.PropertyKeyStrings.FLICK_TIME_EXPONENT);
+        }
+
         private void Settings_FlickThresholdChanged(object sender, EventArgs e)
         {
             flickAction.ChangedProperties.Add(TouchpadFlickStick.PropertyKeyStrings.FLICK_THRESHOLD);
+        }
+
+        private void Settings_ReleaseDampeningSpeedChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(TouchpadFlickStick.PropertyKeyStrings.RELEASE_DAMPENING_SPEED);
+        }
+
+        private void Settings_MultiplierCompensationChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(TouchpadFlickStick.PropertyKeyStrings.MULTIPLIER_COMPENSATION);
+        }
+
+        private void Settings_AccelerationMultiplierChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(TouchpadFlickStick.PropertyKeyStrings.ACCELERATION_MULTIPLIER);
+        }
+
+        private void Settings_SweepSensitivityChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(TouchpadFlickStick.PropertyKeyStrings.SWEEP_SENSITIVITY);
+        }
+
+        private void Settings_FrontAngleDeadzoneChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(TouchpadFlickStick.PropertyKeyStrings.FRONT_ANGLE_DEADZONE);
         }
     }
 
@@ -4237,6 +6275,71 @@ namespace DS4MapperTest
     {
         public class FlickStickSettings
         {
+            public FlickStickSubMode SubMode
+            {
+                get => flickAction.SubMode;
+                set
+                {
+                    flickAction.SubMode = value;
+                    SubModeChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public FlickSnapAngle SnapAngle
+            {
+                get => flickAction.SnapAngle;
+                set
+                {
+                    flickAction.SnapAngle = value;
+                    SnapAngleChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler SnapAngleChanged;
+
+            public bool ShouldSerializeSnapAngle()
+            {
+                return flickAction.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.SNAP_ANGLE);
+            }
+
+            public double SnapStrength
+            {
+                get => flickAction.SnapStrength;
+                set
+                {
+                    flickAction.SnapStrength = value;
+                    SnapStrengthChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler SnapStrengthChanged;
+
+            public bool ShouldSerializeSnapStrength()
+            {
+                return flickAction.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.SNAP_STRENGTH);
+            }
+
+            public double RotateSmoothOverride
+            {
+                get => flickAction.RotateSmoothOverride;
+                set
+                {
+                    flickAction.RotateSmoothOverride = value;
+                    RotateSmoothOverrideChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler RotateSmoothOverrideChanged;
+
+            public bool ShouldSerializeRotateSmoothOverride()
+            {
+                return flickAction.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.ROTATE_SMOOTH_OVERRIDE);
+            }
+            public event EventHandler SubModeChanged;
+
+            public bool ShouldSerializeSubMode()
+            {
+                return flickAction.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.SUB_MODE);
+            }
+
             public double RealWorldCalibration
             {
                 get => flickAction.RealWorldCalibration;
@@ -4248,10 +6351,7 @@ namespace DS4MapperTest
             }
             public event EventHandler RealWorldCalibrationChanged;
 
-            public bool ShouldSerializeRealWorldCalibration()
-            {
-                return flickAction.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.REAL_WORLD_CALIBRATION);
-            }
+            public bool ShouldSerializeRealWorldCalibration() => false;
 
             public double FlickThreshold
             {
@@ -4285,6 +6385,22 @@ namespace DS4MapperTest
                 return flickAction.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.FLICK_TIME);
             }
 
+            public double FlickTimeExponent
+            {
+                get => flickAction.FlickTimeExponent;
+                set
+                {
+                    flickAction.FlickTimeExponent = value;
+                    FlickTimeExponentChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler FlickTimeExponentChanged;
+
+            public bool ShouldSerializeFlickTimeExponent()
+            {
+                return flickAction.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.FLICK_TIME_EXPONENT);
+            }
+
             public double MinAngleThreshold
             {
                 get => flickAction.MinAngleThreshold;
@@ -4306,15 +6422,93 @@ namespace DS4MapperTest
                 get => flickAction.InGameSens;
                 set
                 {
-                    flickAction.MinAngleThreshold = value;
+                    flickAction.InGameSens = value;
                     InGameSensChanged?.Invoke(this, EventArgs.Empty);
                 }
             }
             public event EventHandler InGameSensChanged;
 
-            public bool ShouldSerializeInGameSens()
+            public bool ShouldSerializeInGameSens() => false;
+
+            public double ReleaseDampeningSpeed
             {
-                return flickAction.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.IN_GAME_SENS);
+                get => flickAction.ReleaseDampeningSpeed;
+                set
+                {
+                    flickAction.ReleaseDampeningSpeed = value;
+                    ReleaseDampeningSpeedChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler ReleaseDampeningSpeedChanged;
+
+            public bool ShouldSerializeReleaseDampeningSpeed()
+            {
+                return flickAction.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.RELEASE_DAMPENING_SPEED);
+            }
+
+            public bool MultiplierCompensation
+            {
+                get => flickAction.MultiplierCompensation;
+                set
+                {
+                    flickAction.MultiplierCompensation = value;
+                    MultiplierCompensationChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MultiplierCompensationChanged;
+
+            public bool ShouldSerializeMultiplierCompensation()
+            {
+                return flickAction.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.MULTIPLIER_COMPENSATION);
+            }
+
+            public double AccelerationMultiplier
+            {
+                get => flickAction.AccelerationMultiplier;
+                set
+                {
+                    flickAction.AccelerationMultiplier = value;
+                    AccelerationMultiplierChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler AccelerationMultiplierChanged;
+
+            public bool ShouldSerializeAccelerationMultiplier()
+            {
+                return flickAction.MultiplierCompensation ||
+                    flickAction.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.ACCELERATION_MULTIPLIER);
+            }
+
+            public double SweepSensitivity
+            {
+                get => flickAction.SweepSensitivity;
+                set
+                {
+                    flickAction.SweepSensitivity = value;
+                    SweepSensitivityChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler SweepSensitivityChanged;
+
+            public bool ShouldSerializeSweepSensitivity()
+            {
+                return flickAction.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.SWEEP_SENSITIVITY);
+            }
+
+            public double FrontAngleDeadzone
+            {
+                get => flickAction.FrontAngleDeadzone;
+                set
+                {
+                    flickAction.FrontAngleDeadzone = value;
+                    FrontAngleDeadzoneChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler FrontAngleDeadzoneChanged;
+
+            public bool ShouldSerializeFrontAngleDeadzone()
+            {
+                return flickAction.ChangedProperties.Contains(StickFlickStick.PropertyKeyStrings.FRONT_ANGLE_DEADZONE);
             }
 
             public FlickStickSettings(StickFlickStick flickAction)
@@ -4335,11 +6529,31 @@ namespace DS4MapperTest
             settings = new FlickStickSettings(flickAction);
 
             NameChanged += StickFlickStickActionSerializer_NameChanged;
+            settings.SubModeChanged += Settings_SubModeChanged;
             settings.RealWorldCalibrationChanged += Settings_RealWorldCalibrationChanged;
             settings.FlickThresholdChanged += Settings_FlickThresholdChanged;
             settings.FlickTimeChanged += Settings_FlickTimeChanged;
+            settings.FlickTimeExponentChanged += Settings_FlickTimeExponentChanged;
             settings.MinAngleThresholdChanged += Settings_MinAngleThresholdChanged;
             settings.InGameSensChanged += Settings_InGameSensChanged;
+            settings.ReleaseDampeningSpeedChanged += Settings_ReleaseDampeningSpeedChanged;
+            settings.MultiplierCompensationChanged += Settings_MultiplierCompensationChanged;
+            settings.AccelerationMultiplierChanged += Settings_AccelerationMultiplierChanged;
+            settings.RotateSmoothOverrideChanged += Settings_RotateSmoothOverrideChanged;
+            settings.SweepSensitivityChanged += Settings_SweepSensitivityChanged;
+            settings.FrontAngleDeadzoneChanged += Settings_FrontAngleDeadzoneChanged;
+            settings.SnapAngleChanged += Settings_SnapAngleChanged;
+            settings.SnapStrengthChanged += Settings_SnapStrengthChanged;
+        }
+
+        private void Settings_SnapAngleChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.SNAP_ANGLE);
+        }
+
+        private void Settings_SnapStrengthChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.SNAP_STRENGTH);
         }
 
         public StickFlickStickActionSerializer(ActionLayer tempLayer, MapAction action) :
@@ -4356,6 +6570,11 @@ namespace DS4MapperTest
         private void StickFlickStickActionSerializer_NameChanged(object sender, EventArgs e)
         {
             flickAction.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.NAME);
+        }
+
+        private void Settings_SubModeChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.SUB_MODE);
         }
 
         private void Settings_RealWorldCalibrationChanged(object sender, EventArgs e)
@@ -4378,9 +6597,44 @@ namespace DS4MapperTest
             flickAction.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.FLICK_TIME);
         }
 
+        private void Settings_FlickTimeExponentChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.FLICK_TIME_EXPONENT);
+        }
+
         private void Settings_FlickThresholdChanged(object sender, EventArgs e)
         {
             flickAction.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.FLICK_THRESHOLD);
+        }
+
+        private void Settings_ReleaseDampeningSpeedChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.RELEASE_DAMPENING_SPEED);
+        }
+
+        private void Settings_MultiplierCompensationChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.MULTIPLIER_COMPENSATION);
+        }
+
+        private void Settings_AccelerationMultiplierChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.ACCELERATION_MULTIPLIER);
+        }
+
+        private void Settings_RotateSmoothOverrideChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.ROTATE_SMOOTH_OVERRIDE);
+        }
+
+        private void Settings_SweepSensitivityChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.SWEEP_SENSITIVITY);
+        }
+
+        private void Settings_FrontAngleDeadzoneChanged(object sender, EventArgs e)
+        {
+            flickAction.ChangedProperties.Add(StickFlickStick.PropertyKeyStrings.FRONT_ANGLE_DEADZONE);
         }
     }
 
@@ -4445,6 +6699,45 @@ namespace DS4MapperTest
         public class StickPadActionSettings
         {
             private StickPadAction padAction;
+
+            public bool SeparateAxisDeadZones
+            {
+                get => padAction.DeadMod.SeparateAxisDeadZones;
+                set
+                {
+                    padAction.DeadMod.SeparateAxisDeadZones = value;
+                    SeparateAxisDeadZonesChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler SeparateAxisDeadZonesChanged;
+            public bool ShouldSerializeSeparateAxisDeadZones() =>
+                padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.SEPARATE_AXIS_DEAD_ZONES);
+
+            public double DeadZoneX
+            {
+                get => padAction.DeadMod.DeadZoneX;
+                set
+                {
+                    padAction.DeadMod.DeadZoneX = Math.Clamp(value, 0.0, 1.0);
+                    DeadZoneXChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DeadZoneXChanged;
+            public bool ShouldSerializeDeadZoneX() =>
+                padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.DEAD_ZONE_X);
+
+            public double DeadZoneY
+            {
+                get => padAction.DeadMod.DeadZoneY;
+                set
+                {
+                    padAction.DeadMod.DeadZoneY = Math.Clamp(value, 0.0, 1.0);
+                    DeadZoneYChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DeadZoneYChanged;
+            public bool ShouldSerializeDeadZoneY() =>
+                padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.DEAD_ZONE_Y);
 
             public double DeadZone
             {
@@ -4577,6 +6870,260 @@ namespace DS4MapperTest
                 return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.DIAGONAL_RANGE);
             }
 
+            public bool CounterMovementReleasePressEnabled
+            {
+                get => padAction.CounterMovementReleasePress.Enabled;
+                set
+                {
+                    padAction.CounterMovementReleasePress.Enabled = value;
+                    CounterMovementReleasePressEnabledChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler CounterMovementReleasePressEnabledChanged;
+            public bool ShouldSerializeCounterMovementReleasePressEnabled()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED);
+            }
+
+            public bool UseArrowKeysForCounterMovementPresses
+            {
+                get => padAction.CounterMovementReleasePress.UseArrowKeysForCounterMovementPresses;
+                set
+                {
+                    padAction.CounterMovementReleasePress.UseArrowKeysForCounterMovementPresses = value;
+                    UseArrowKeysForCounterMovementPressesChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler UseArrowKeysForCounterMovementPressesChanged;
+            public bool ShouldSerializeUseArrowKeysForCounterMovementPresses()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_USE_ARROW_KEYS);
+            }
+
+            public string CounterMovementTapLengthPreset
+            {
+                get => padAction.CounterMovementReleasePress.TapLengthPreset.ToString();
+                set
+                {
+                    if (Enum.TryParse(value, out DS4MapperTest.StickActions.CounterMovementTapLengthPreset temp))
+                    {
+                        padAction.CounterMovementReleasePress.TapLengthPreset = temp;
+                        CounterMovementTapLengthPresetChanged?.Invoke(this, EventArgs.Empty);
+                    }
+                }
+            }
+            public event EventHandler CounterMovementTapLengthPresetChanged;
+            public bool ShouldSerializeCounterMovementTapLengthPreset()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET);
+            }
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public OppositeTapLengthMode OppositeTapLengthMode
+            {
+                get => padAction.CounterMovementReleasePress.OppositeTapLengthMode;
+                set
+                {
+                    padAction.CounterMovementReleasePress.OppositeTapLengthMode = value;
+                    OppositeTapLengthModeChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthModeChanged;
+            public bool ShouldSerializeOppositeTapLengthMode()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+            }
+
+            public int OppositeTapLengthMs
+            {
+                get => padAction.CounterMovementReleasePress.OppositeTapLengthMs;
+                set
+                {
+                    padAction.CounterMovementReleasePress.OppositeTapLengthMs = value;
+                    OppositeTapLengthMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthMsChanged;
+            public bool ShouldSerializeOppositeTapLengthMs()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS);
+            }
+
+            public int OppositeTapLengthVariancePercent
+            {
+                get => padAction.CounterMovementReleasePress.OppositeTapLengthVariancePercent;
+                set
+                {
+                    padAction.CounterMovementReleasePress.OppositeTapLengthVariancePercent = value;
+                    OppositeTapLengthVariancePercentChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthVariancePercentChanged;
+            public bool ShouldSerializeOppositeTapLengthVariancePercent()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT);
+            }
+
+            public int OppositeTapLengthMinimumMs
+            {
+                get => padAction.CounterMovementReleasePress.OppositeTapLengthMinimumMs;
+                set
+                {
+                    padAction.CounterMovementReleasePress.OppositeTapLengthMinimumMs = value;
+                    OppositeTapLengthMinimumMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthMinimumMsChanged;
+            public bool ShouldSerializeOppositeTapLengthMinimumMs()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS);
+            }
+
+            public int OppositeTapLengthMaximumMs
+            {
+                get => padAction.CounterMovementReleasePress.OppositeTapLengthMaximumMs;
+                set
+                {
+                    padAction.CounterMovementReleasePress.OppositeTapLengthMaximumMs = value;
+                    OppositeTapLengthMaximumMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthMaximumMsChanged;
+            public bool ShouldSerializeOppositeTapLengthMaximumMs()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS);
+            }
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public OppositeTapStartDelayMode OppositeTapStartDelayMode
+            {
+                get => padAction.CounterMovementReleasePress.OppositeTapStartDelayMode;
+                set
+                {
+                    padAction.CounterMovementReleasePress.OppositeTapStartDelayMode = value;
+                    OppositeTapStartDelayModeChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayModeChanged;
+            public bool ShouldSerializeOppositeTapStartDelayMode()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE);
+            }
+
+            public int OppositeTapStartDelayMs
+            {
+                get => padAction.CounterMovementReleasePress.OppositeTapStartDelayMs;
+                set
+                {
+                    padAction.CounterMovementReleasePress.OppositeTapStartDelayMs = value;
+                    OppositeTapStartDelayMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayMsChanged;
+            public bool ShouldSerializeOppositeTapStartDelayMs()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS);
+            }
+
+            public int OppositeTapStartDelayVariancePercent
+            {
+                get => padAction.CounterMovementReleasePress.OppositeTapStartDelayVariancePercent;
+                set
+                {
+                    padAction.CounterMovementReleasePress.OppositeTapStartDelayVariancePercent = value;
+                    OppositeTapStartDelayVariancePercentChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayVariancePercentChanged;
+            public bool ShouldSerializeOppositeTapStartDelayVariancePercent()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT);
+            }
+
+            public int OppositeTapStartDelayMinimumMs
+            {
+                get => padAction.CounterMovementReleasePress.OppositeTapStartDelayMinimumMs;
+                set
+                {
+                    padAction.CounterMovementReleasePress.OppositeTapStartDelayMinimumMs = value;
+                    OppositeTapStartDelayMinimumMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayMinimumMsChanged;
+            public bool ShouldSerializeOppositeTapStartDelayMinimumMs()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS);
+            }
+
+            public int OppositeTapStartDelayMaximumMs
+            {
+                get => padAction.CounterMovementReleasePress.OppositeTapStartDelayMaximumMs;
+                set
+                {
+                    padAction.CounterMovementReleasePress.OppositeTapStartDelayMaximumMs = value;
+                    OppositeTapStartDelayMaximumMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayMaximumMsChanged;
+            public bool ShouldSerializeOppositeTapStartDelayMaximumMs()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS);
+            }
+
+            public int CounterMovementMinimumHoldMs
+            {
+                get => padAction.CounterMovementReleasePress.MinimumHoldMs;
+                set
+                {
+                    padAction.CounterMovementReleasePress.MinimumHoldMs = value;
+                    CounterMovementMinimumHoldMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler CounterMovementMinimumHoldMsChanged;
+            public bool ShouldSerializeCounterMovementMinimumHoldMs()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_MIN_HOLD_MS);
+            }
+
+            public double RequiredStickDeflectionThreshold
+            {
+                get => padAction.CounterMovementReleasePress.ArmingThreshold;
+                set
+                {
+                    padAction.CounterMovementReleasePress.ArmingThreshold = value;
+                    RequiredStickDeflectionThresholdChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler RequiredStickDeflectionThresholdChanged;
+            public bool ShouldSerializeRequiredStickDeflectionThreshold()
+            {
+                return padAction.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.REQUIRED_STICK_DEFLECTION_THRESHOLD);
+            }
+
+            // --- Legacy compatibility (pre-rename "Digital Release Brake" profiles) ---
+            // Old profiles only ever wrote "BrakeEnabled"/"BrakeDurationMs". Captured here,
+            // not applied directly, so PopulateMap (which runs after the whole object has
+            // deserialized) can apply them using the old immediate-start semantics, and only
+            // for whichever new-named fields this same profile did not already specify
+            // explicitly under their new names. Never re-serialized.
+            private bool? legacyBrakeEnabled;
+            internal bool? LegacyBrakeEnabled => legacyBrakeEnabled;
+            public bool BrakeEnabled
+            {
+                get => false;
+                set => legacyBrakeEnabled = value;
+            }
+            public bool ShouldSerializeBrakeEnabled() => false;
+
+            private int? legacyBrakeDurationMs;
+            internal int? LegacyBrakeDurationMs => legacyBrakeDurationMs;
+            public int BrakeDurationMs
+            {
+                get => 0;
+                set => legacyBrakeDurationMs = value;
+            }
+            public bool ShouldSerializeBrakeDurationMs() => false;
+
             public StickPadActionSettings(StickPadAction padAction)
             {
                 this.padAction = padAction;
@@ -4682,11 +7229,104 @@ namespace DS4MapperTest
             settings.PadModeChanged += Settings_PadModeChanged;
             settings.DeadZoneTypeChanged += Settings_DeadZoneTypeChanged;
             settings.DeadZoneChanged += Settings_DeadZoneChanged;
+            settings.SeparateAxisDeadZonesChanged += Settings_SeparateAxisDeadZonesChanged;
+            settings.DeadZoneXChanged += Settings_DeadZoneXChanged;
+            settings.DeadZoneYChanged += Settings_DeadZoneYChanged;
             settings.UseOuterRingChanged += Settings_UseOuterRingChanged;
             settings.OuterRingDeadZoneChanged += Settings_OuterRingDeadZoneChanged;
             settings.UseAsOuterRingChanged += Settings_UseAsOuterRingChanged;
             settings.RotationChanged += Settings_RotationChanged;
             settings.DiagonalRangeChanged += Settings_DiagonalRangeChanged;
+            settings.CounterMovementReleasePressEnabledChanged += Settings_CounterMovementReleasePressEnabledChanged;
+            settings.UseArrowKeysForCounterMovementPressesChanged += Settings_UseArrowKeysForCounterMovementPressesChanged;
+            settings.CounterMovementTapLengthPresetChanged += Settings_CounterMovementTapLengthPresetChanged;
+            settings.OppositeTapLengthModeChanged += Settings_OppositeTapLengthModeChanged;
+            settings.OppositeTapLengthMsChanged += Settings_OppositeTapLengthMsChanged;
+            settings.OppositeTapLengthVariancePercentChanged += Settings_OppositeTapLengthVariancePercentChanged;
+            settings.OppositeTapLengthMinimumMsChanged += Settings_OppositeTapLengthMinimumMsChanged;
+            settings.OppositeTapLengthMaximumMsChanged += Settings_OppositeTapLengthMaximumMsChanged;
+            settings.OppositeTapStartDelayModeChanged += Settings_OppositeTapStartDelayModeChanged;
+            settings.OppositeTapStartDelayMsChanged += Settings_OppositeTapStartDelayMsChanged;
+            settings.OppositeTapStartDelayVariancePercentChanged += Settings_OppositeTapStartDelayVariancePercentChanged;
+            settings.OppositeTapStartDelayMinimumMsChanged += Settings_OppositeTapStartDelayMinimumMsChanged;
+            settings.OppositeTapStartDelayMaximumMsChanged += Settings_OppositeTapStartDelayMaximumMsChanged;
+            settings.CounterMovementMinimumHoldMsChanged += Settings_CounterMovementMinimumHoldMsChanged;
+            settings.RequiredStickDeflectionThresholdChanged += Settings_RequiredStickDeflectionThresholdChanged;
+        }
+
+        private void Settings_CounterMovementReleasePressEnabledChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED);
+        }
+
+        private void Settings_UseArrowKeysForCounterMovementPressesChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_USE_ARROW_KEYS);
+        }
+
+        private void Settings_CounterMovementTapLengthPresetChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET);
+        }
+
+        private void Settings_OppositeTapLengthModeChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+        }
+
+        private void Settings_OppositeTapLengthMsChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS);
+        }
+
+        private void Settings_OppositeTapLengthVariancePercentChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT);
+        }
+
+        private void Settings_OppositeTapLengthMinimumMsChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS);
+        }
+
+        private void Settings_OppositeTapLengthMaximumMsChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS);
+        }
+
+        private void Settings_OppositeTapStartDelayModeChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE);
+        }
+
+        private void Settings_OppositeTapStartDelayMsChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS);
+        }
+
+        private void Settings_OppositeTapStartDelayVariancePercentChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT);
+        }
+
+        private void Settings_OppositeTapStartDelayMinimumMsChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS);
+        }
+
+        private void Settings_OppositeTapStartDelayMaximumMsChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS);
+        }
+
+        private void Settings_CounterMovementMinimumHoldMsChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_MIN_HOLD_MS);
+        }
+
+        private void Settings_RequiredStickDeflectionThresholdChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.REQUIRED_STICK_DEFLECTION_THRESHOLD);
         }
 
         private void Settings_DeadZoneTypeChanged(object sender, EventArgs e)
@@ -4697,6 +7337,21 @@ namespace DS4MapperTest
         private void Settings_DeadZoneChanged(object sender, EventArgs e)
         {
             stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.DEAD_ZONE);
+        }
+
+        private void Settings_SeparateAxisDeadZonesChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.SEPARATE_AXIS_DEAD_ZONES);
+        }
+
+        private void Settings_DeadZoneXChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.DEAD_ZONE_X);
+        }
+
+        private void Settings_DeadZoneYChanged(object sender, EventArgs e)
+        {
+            stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.DEAD_ZONE_Y);
         }
 
         private void Settings_DiagonalRangeChanged(object sender, EventArgs e)
@@ -4881,6 +7536,113 @@ namespace DS4MapperTest
                 stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.OUTER_RING_BUTTON);
                 //stickPadAct.RingButton.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.OUTER_RING_BUTTON);
             }
+
+            MigrateLegacyCounterMovementReleasePressFields();
+        }
+
+        // Legacy "Digital Release Brake" profile migration: pre-rename profiles only ever
+        // wrote BrakeEnabled/BrakeDurationMs. Applied here (after the whole object has
+        // deserialized) using the old immediate-start semantics, i.e. the migrated tap
+        // length window becomes min == max == the old single duration, with a 0-0ms start
+        // delay so the generated press still begins immediately, matching pre-rename
+        // behaviour exactly. Runs only for whichever new-named fields this same profile did
+        // not already specify explicitly, so a legacy field can never silently overwrite a
+        // value the profile also set directly under its new name.
+        // See TouchpadActionPadSerializer.MigrateLegacyCounterMovementReleasePressFields for
+        // the three profile generations this handles.
+        private void MigrateLegacyCounterMovementReleasePressFields()
+        {
+            if (settings.LegacyBrakeEnabled.HasValue &&
+                !stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED))
+            {
+                stickPadAct.CounterMovementReleasePress.Enabled = settings.LegacyBrakeEnabled.Value;
+                stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED);
+            }
+
+            bool modeFieldPresent = stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+
+            if (settings.LegacyBrakeDurationMs.HasValue)
+            {
+                int legacyDuration = DigitalReleasePressPulse.ClampReleasePressDurationMs(settings.LegacyBrakeDurationMs.Value);
+
+                if (!stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS))
+                {
+                    stickPadAct.CounterMovementReleasePress.OppositeTapLengthMinimumMs = legacyDuration;
+                    stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS);
+                }
+
+                if (!stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS))
+                {
+                    stickPadAct.CounterMovementReleasePress.OppositeTapLengthMaximumMs = legacyDuration;
+                    stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS);
+                }
+
+                if (!stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS))
+                {
+                    stickPadAct.CounterMovementReleasePress.OppositeTapLengthMs = legacyDuration;
+                    stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS);
+                }
+
+                if (!stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT))
+                {
+                    stickPadAct.CounterMovementReleasePress.OppositeTapLengthVariancePercent = 0;
+                    stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT);
+                }
+
+                if (!modeFieldPresent)
+                {
+                    stickPadAct.CounterMovementReleasePress.OppositeTapLengthMode = OppositeTapLengthMode.Fixed;
+                    stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+                }
+
+                if (!stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS))
+                {
+                    stickPadAct.CounterMovementReleasePress.OppositeTapStartDelayMinimumMs = 0;
+                    stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS);
+                }
+
+                if (!stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS))
+                {
+                    stickPadAct.CounterMovementReleasePress.OppositeTapStartDelayMaximumMs = 0;
+                    stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS);
+                }
+
+                if (!stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE))
+                {
+                    stickPadAct.CounterMovementReleasePress.OppositeTapStartDelayMode = OppositeTapStartDelayMode.Fixed;
+                    stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE);
+                }
+
+                if (!stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS))
+                {
+                    stickPadAct.CounterMovementReleasePress.OppositeTapStartDelayMs = 0;
+                    stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS);
+                }
+
+                if (!stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT))
+                {
+                    stickPadAct.CounterMovementReleasePress.OppositeTapStartDelayVariancePercent = 0;
+                    stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT);
+                }
+
+                if (!stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET))
+                {
+                    stickPadAct.CounterMovementReleasePress.TapLengthPreset = DS4MapperTest.StickActions.CounterMovementTapLengthPreset.Custom;
+                    stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET);
+                }
+            }
+            else if (!modeFieldPresent &&
+                (stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS) ||
+                 stickPadAct.ChangedProperties.Contains(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS)))
+            {
+                stickPadAct.CounterMovementReleasePress.OppositeTapLengthMode = OppositeTapLengthMode.MinimumAndMaximum;
+                stickPadAct.ChangedProperties.Add(StickPadAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+                stickPadAct.CounterMovementReleasePress.ApplyMinimumAndMaximum(
+                    stickPadAct.CounterMovementReleasePress.OppositeTapLengthMinimumMs,
+                    stickPadAct.CounterMovementReleasePress.OppositeTapLengthMaximumMs);
+            }
+
+            stickPadAct.CounterMovementReleasePress.NormalizeRanges();
         }
 
         public void FlagBtnChangedDirection(StickPadAction.DpadDirections dir,
@@ -4918,8 +7680,897 @@ namespace DS4MapperTest
         }
     }
 
+    public class AnalogEmulationActionSerializer : MapActionSerializer
+    {
+        public class AnalogEmulationSettings
+        {
+            private StickAnalogEmulationAction analogAction;
+
+            public bool SeparateAxisDeadZones
+            {
+                get => analogAction.DeadMod.SeparateAxisDeadZones;
+                set
+                {
+                    analogAction.DeadMod.SeparateAxisDeadZones = value;
+                    SeparateAxisDeadZonesChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler SeparateAxisDeadZonesChanged;
+            public bool ShouldSerializeSeparateAxisDeadZones() =>
+                analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.SEPARATE_AXIS_DEAD_ZONES);
+
+            public double DeadZoneX
+            {
+                get => analogAction.DeadMod.DeadZoneX;
+                set
+                {
+                    analogAction.DeadMod.DeadZoneX = Math.Clamp(value, 0.0, 1.0);
+                    DeadZoneXChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DeadZoneXChanged;
+            public bool ShouldSerializeDeadZoneX() =>
+                analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.DEAD_ZONE_X);
+
+            public double DeadZoneY
+            {
+                get => analogAction.DeadMod.DeadZoneY;
+                set
+                {
+                    analogAction.DeadMod.DeadZoneY = Math.Clamp(value, 0.0, 1.0);
+                    DeadZoneYChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DeadZoneYChanged;
+            public bool ShouldSerializeDeadZoneY() =>
+                analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.DEAD_ZONE_Y);
+
+            public double DeadZone
+            {
+                get => analogAction.DeadMod.DeadZone;
+                set
+                {
+                    analogAction.DeadMod.DeadZone = Math.Clamp(value, 0.0, 1.0);
+                    DeadZoneChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DeadZoneChanged;
+            public bool ShouldSerializeDeadZone()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.DEAD_ZONE);
+            }
+
+            //public StickDeadZone.DeadZoneTypes DeadZoneType
+            public string DeadZoneType
+            {
+                get => analogAction.DeadMod.DeadZoneType.ToString();
+                set
+                {
+                    if (Enum.TryParse(value, out StickDeadZone.DeadZoneTypes temp))
+                    {
+                        analogAction.DeadMod.DeadZoneType = temp;
+                        DeadZoneTypeChanged?.Invoke(this, EventArgs.Empty);
+                    }
+                }
+            }
+            public event EventHandler DeadZoneTypeChanged;
+            public bool ShouldSerializeDeadZoneType()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.DEAD_ZONE_TYPE);
+            }
+
+            public int Rotation
+            {
+                get => analogAction.Rotation;
+                set
+                {
+                    analogAction.Rotation = value;
+                    RotationChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler RotationChanged;
+            public bool ShouldSerializeRotation()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.ROTATION);
+            }
+
+            public double MaxZone
+            {
+                get => analogAction.DeadMod.MaxZone;
+                set
+                {
+                    analogAction.DeadMod.MaxZone = Math.Clamp(value, 0.0, 1.0);
+                    MaxZoneChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MaxZoneChanged;
+            public bool ShouldSerializeMaxZone()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.MAX_ZONE);
+            }
+
+            public string DirectionMode
+            {
+                get => analogAction.DirectionMode.ToString();
+                set
+                {
+                    if (Enum.TryParse(value, out AnalogEmulationMath.ResolutionMode temp))
+                    {
+                        analogAction.DirectionMode = temp;
+                        DirectionModeChanged?.Invoke(this, EventArgs.Empty);
+                    }
+                }
+            }
+            public event EventHandler DirectionModeChanged;
+            public bool ShouldSerializeDirectionMode()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.DIRECTION_MODE);
+            }
+
+            public int DiagonalZoneWidth
+            {
+                get => analogAction.DiagonalZoneWidth;
+                set
+                {
+                    analogAction.DiagonalZoneWidth = value;
+                    DiagonalZoneWidthChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DiagonalZoneWidthChanged;
+            public bool ShouldSerializeDiagonalZoneWidth()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.DIAGONAL_ZONE_WIDTH);
+            }
+
+            public int DirectionPulseTimeMs
+            {
+                get => analogAction.DirectionPulseTimeMs;
+                set
+                {
+                    analogAction.DirectionPulseTimeMs = value;
+                    DirectionPulseTimeMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DirectionPulseTimeMsChanged;
+            public bool ShouldSerializeDirectionPulseTimeMs()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.DIRECTION_PULSE_TIME_MS);
+            }
+
+            public bool AnalogSpeedEmulationEnabled
+            {
+                get => analogAction.SpeedEmulationEnabled;
+                set
+                {
+                    analogAction.SpeedEmulationEnabled = value;
+                    AnalogSpeedEmulationEnabledChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler AnalogSpeedEmulationEnabledChanged;
+            public bool ShouldSerializeAnalogSpeedEmulationEnabled()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.SPEED_ENABLED);
+            }
+
+            public int AnalogEmulationActivePercent
+            {
+                get => analogAction.SpeedActivePercent;
+                set
+                {
+                    analogAction.SpeedActivePercent = value;
+                    AnalogEmulationActivePercentChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler AnalogEmulationActivePercentChanged;
+            public bool ShouldSerializeAnalogEmulationActivePercent()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.SPEED_ACTIVE_PERCENT);
+            }
+
+            public int AnalogEmulationPulseTimeMs
+            {
+                get => analogAction.SpeedPulseTimeMs;
+                set
+                {
+                    analogAction.SpeedPulseTimeMs = value;
+                    AnalogEmulationPulseTimeMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler AnalogEmulationPulseTimeMsChanged;
+            public bool ShouldSerializeAnalogEmulationPulseTimeMs()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.SPEED_PULSE_TIME_MS);
+            }
+
+            public int FullSpeedThresholdPercent
+            {
+                get => analogAction.FullSpeedThresholdPercent;
+                set
+                {
+                    analogAction.FullSpeedThresholdPercent = value;
+                    FullSpeedThresholdPercentChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler FullSpeedThresholdPercentChanged;
+            public bool ShouldSerializeFullSpeedThresholdPercent()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.FULL_SPEED_THRESHOLD_PERCENT);
+            }
+
+            public bool CounterMovementReleasePressEnabled
+            {
+                get => analogAction.CounterMovementReleasePress.Enabled;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.Enabled = value;
+                    CounterMovementReleasePressEnabledChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler CounterMovementReleasePressEnabledChanged;
+            public bool ShouldSerializeCounterMovementReleasePressEnabled()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED);
+            }
+
+            public bool UseArrowKeysForCounterMovementPresses
+            {
+                get => analogAction.CounterMovementReleasePress.UseArrowKeysForCounterMovementPresses;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.UseArrowKeysForCounterMovementPresses = value;
+                    UseArrowKeysForCounterMovementPressesChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler UseArrowKeysForCounterMovementPressesChanged;
+            public bool ShouldSerializeUseArrowKeysForCounterMovementPresses()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_USE_ARROW_KEYS);
+            }
+
+            public string CounterMovementTapLengthPreset
+            {
+                get => analogAction.CounterMovementReleasePress.TapLengthPreset.ToString();
+                set
+                {
+                    if (Enum.TryParse(value, out DS4MapperTest.StickActions.CounterMovementTapLengthPreset temp))
+                    {
+                        analogAction.CounterMovementReleasePress.TapLengthPreset = temp;
+                        CounterMovementTapLengthPresetChanged?.Invoke(this, EventArgs.Empty);
+                    }
+                }
+            }
+            public event EventHandler CounterMovementTapLengthPresetChanged;
+            public bool ShouldSerializeCounterMovementTapLengthPreset()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET);
+            }
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public OppositeTapLengthMode OppositeTapLengthMode
+            {
+                get => analogAction.CounterMovementReleasePress.OppositeTapLengthMode;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.OppositeTapLengthMode = value;
+                    OppositeTapLengthModeChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthModeChanged;
+            public bool ShouldSerializeOppositeTapLengthMode()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+            }
+
+            public int OppositeTapLengthMs
+            {
+                get => analogAction.CounterMovementReleasePress.OppositeTapLengthMs;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.OppositeTapLengthMs = value;
+                    OppositeTapLengthMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthMsChanged;
+            public bool ShouldSerializeOppositeTapLengthMs()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS);
+            }
+
+            public int OppositeTapLengthVariancePercent
+            {
+                get => analogAction.CounterMovementReleasePress.OppositeTapLengthVariancePercent;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.OppositeTapLengthVariancePercent = value;
+                    OppositeTapLengthVariancePercentChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthVariancePercentChanged;
+            public bool ShouldSerializeOppositeTapLengthVariancePercent()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT);
+            }
+
+            public int OppositeTapLengthMinimumMs
+            {
+                get => analogAction.CounterMovementReleasePress.OppositeTapLengthMinimumMs;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.OppositeTapLengthMinimumMs = value;
+                    OppositeTapLengthMinimumMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthMinimumMsChanged;
+            public bool ShouldSerializeOppositeTapLengthMinimumMs()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS);
+            }
+
+            public int OppositeTapLengthMaximumMs
+            {
+                get => analogAction.CounterMovementReleasePress.OppositeTapLengthMaximumMs;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.OppositeTapLengthMaximumMs = value;
+                    OppositeTapLengthMaximumMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapLengthMaximumMsChanged;
+            public bool ShouldSerializeOppositeTapLengthMaximumMs()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS);
+            }
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public OppositeTapStartDelayMode OppositeTapStartDelayMode
+            {
+                get => analogAction.CounterMovementReleasePress.OppositeTapStartDelayMode;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.OppositeTapStartDelayMode = value;
+                    OppositeTapStartDelayModeChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayModeChanged;
+            public bool ShouldSerializeOppositeTapStartDelayMode()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE);
+            }
+
+            public int OppositeTapStartDelayMs
+            {
+                get => analogAction.CounterMovementReleasePress.OppositeTapStartDelayMs;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.OppositeTapStartDelayMs = value;
+                    OppositeTapStartDelayMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayMsChanged;
+            public bool ShouldSerializeOppositeTapStartDelayMs()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS);
+            }
+
+            public int OppositeTapStartDelayVariancePercent
+            {
+                get => analogAction.CounterMovementReleasePress.OppositeTapStartDelayVariancePercent;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.OppositeTapStartDelayVariancePercent = value;
+                    OppositeTapStartDelayVariancePercentChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayVariancePercentChanged;
+            public bool ShouldSerializeOppositeTapStartDelayVariancePercent()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT);
+            }
+
+            public int OppositeTapStartDelayMinimumMs
+            {
+                get => analogAction.CounterMovementReleasePress.OppositeTapStartDelayMinimumMs;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.OppositeTapStartDelayMinimumMs = value;
+                    OppositeTapStartDelayMinimumMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayMinimumMsChanged;
+            public bool ShouldSerializeOppositeTapStartDelayMinimumMs()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS);
+            }
+
+            public int OppositeTapStartDelayMaximumMs
+            {
+                get => analogAction.CounterMovementReleasePress.OppositeTapStartDelayMaximumMs;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.OppositeTapStartDelayMaximumMs = value;
+                    OppositeTapStartDelayMaximumMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OppositeTapStartDelayMaximumMsChanged;
+            public bool ShouldSerializeOppositeTapStartDelayMaximumMs()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS);
+            }
+
+            public int CounterMovementMinimumHoldMs
+            {
+                get => analogAction.CounterMovementReleasePress.MinimumHoldMs;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.MinimumHoldMs = value;
+                    CounterMovementMinimumHoldMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler CounterMovementMinimumHoldMsChanged;
+            public bool ShouldSerializeCounterMovementMinimumHoldMs()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_MIN_HOLD_MS);
+            }
+
+            public double RequiredStickDeflectionThreshold
+            {
+                get => analogAction.CounterMovementReleasePress.ArmingThreshold;
+                set
+                {
+                    analogAction.CounterMovementReleasePress.ArmingThreshold = value;
+                    RequiredStickDeflectionThresholdChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler RequiredStickDeflectionThresholdChanged;
+            public bool ShouldSerializeRequiredStickDeflectionThreshold()
+            {
+                return analogAction.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.REQUIRED_STICK_DEFLECTION_THRESHOLD);
+            }
+
+            // --- Legacy compatibility (pre-rename "Digital Release Brake" profiles) ---
+            // See StickPadActionSerializer.StickPadActionSettings for the full rationale;
+            // Analog Emulation shares the same CounterMovementReleasePressProcessor type and
+            // so needs the same migration shadow properties.
+            private bool? legacyBrakeEnabled;
+            internal bool? LegacyBrakeEnabled => legacyBrakeEnabled;
+            public bool BrakeEnabled
+            {
+                get => false;
+                set => legacyBrakeEnabled = value;
+            }
+            public bool ShouldSerializeBrakeEnabled() => false;
+
+            private int? legacyBrakeDurationMs;
+            internal int? LegacyBrakeDurationMs => legacyBrakeDurationMs;
+            public int BrakeDurationMs
+            {
+                get => 0;
+                set => legacyBrakeDurationMs = value;
+            }
+            public bool ShouldSerializeBrakeDurationMs() => false;
+
+            public AnalogEmulationSettings(StickAnalogEmulationAction analogAction)
+            {
+                this.analogAction = analogAction;
+            }
+        }
+
+        private static readonly string[] SlotNames = { "Up", "Down", "Left", "Right" };
+
+        private StickAnalogEmulationAction analogAct = new StickAnalogEmulationAction();
+
+        private Dictionary<string, StickPadActionSerializer.StickPadDirBinding> dictDirBindings =
+            new Dictionary<string, StickPadActionSerializer.StickPadDirBinding>();
+
+        [JsonProperty("Bindings", Required = Required.Always)]
+        public Dictionary<string, StickPadActionSerializer.StickPadDirBinding> DictDirBindings
+        {
+            get => dictDirBindings;
+            set => dictDirBindings = value;
+        }
+        public bool ShouldSerializeDictDirBindings()
+        {
+            return dictDirBindings.Count > 0;
+        }
+
+        private AnalogEmulationSettings settings;
+        public AnalogEmulationSettings Settings
+        {
+            get => settings;
+            set => settings = value;
+        }
+        public bool ShouldSerializeSettings()
+        {
+            return analogAct.ChangedProperties.Count > 0;
+        }
+
+        // Deserialize
+        public AnalogEmulationActionSerializer() : base()
+        {
+            mapAction = analogAct;
+            settings = new AnalogEmulationSettings(analogAct);
+
+            NameChanged += AnalogEmulationActionSerializer_NameChanged;
+            settings.DeadZoneChanged += Settings_DeadZoneChanged;
+            settings.DeadZoneTypeChanged += Settings_DeadZoneTypeChanged;
+            settings.SeparateAxisDeadZonesChanged += Settings_SeparateAxisDeadZonesChanged;
+            settings.DeadZoneXChanged += Settings_DeadZoneXChanged;
+            settings.DeadZoneYChanged += Settings_DeadZoneYChanged;
+            settings.RotationChanged += Settings_RotationChanged;
+            settings.MaxZoneChanged += Settings_MaxZoneChanged;
+            settings.DirectionModeChanged += Settings_DirectionModeChanged;
+            settings.DiagonalZoneWidthChanged += Settings_DiagonalZoneWidthChanged;
+            settings.DirectionPulseTimeMsChanged += Settings_DirectionPulseTimeMsChanged;
+            settings.AnalogSpeedEmulationEnabledChanged += Settings_AnalogSpeedEmulationEnabledChanged;
+            settings.AnalogEmulationActivePercentChanged += Settings_AnalogEmulationActivePercentChanged;
+            settings.AnalogEmulationPulseTimeMsChanged += Settings_AnalogEmulationPulseTimeMsChanged;
+            settings.FullSpeedThresholdPercentChanged += Settings_FullSpeedThresholdPercentChanged;
+            settings.CounterMovementReleasePressEnabledChanged += Settings_CounterMovementReleasePressEnabledChanged;
+            settings.UseArrowKeysForCounterMovementPressesChanged += Settings_UseArrowKeysForCounterMovementPressesChanged;
+            settings.CounterMovementTapLengthPresetChanged += Settings_CounterMovementTapLengthPresetChanged;
+            settings.OppositeTapLengthModeChanged += Settings_OppositeTapLengthModeChanged;
+            settings.OppositeTapLengthMsChanged += Settings_OppositeTapLengthMsChanged;
+            settings.OppositeTapLengthVariancePercentChanged += Settings_OppositeTapLengthVariancePercentChanged;
+            settings.OppositeTapLengthMinimumMsChanged += Settings_OppositeTapLengthMinimumMsChanged;
+            settings.OppositeTapLengthMaximumMsChanged += Settings_OppositeTapLengthMaximumMsChanged;
+            settings.OppositeTapStartDelayModeChanged += Settings_OppositeTapStartDelayModeChanged;
+            settings.OppositeTapStartDelayMsChanged += Settings_OppositeTapStartDelayMsChanged;
+            settings.OppositeTapStartDelayVariancePercentChanged += Settings_OppositeTapStartDelayVariancePercentChanged;
+            settings.OppositeTapStartDelayMinimumMsChanged += Settings_OppositeTapStartDelayMinimumMsChanged;
+            settings.OppositeTapStartDelayMaximumMsChanged += Settings_OppositeTapStartDelayMaximumMsChanged;
+            settings.CounterMovementMinimumHoldMsChanged += Settings_CounterMovementMinimumHoldMsChanged;
+            settings.RequiredStickDeflectionThresholdChanged += Settings_RequiredStickDeflectionThresholdChanged;
+        }
+
+        private void Settings_CounterMovementReleasePressEnabledChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED);
+        }
+
+        private void Settings_UseArrowKeysForCounterMovementPressesChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_USE_ARROW_KEYS);
+        }
+
+        private void Settings_CounterMovementTapLengthPresetChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET);
+        }
+
+        private void Settings_OppositeTapLengthModeChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+        }
+
+        private void Settings_OppositeTapLengthMsChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS);
+        }
+
+        private void Settings_OppositeTapLengthVariancePercentChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT);
+        }
+
+        private void Settings_OppositeTapLengthMinimumMsChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS);
+        }
+
+        private void Settings_OppositeTapLengthMaximumMsChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS);
+        }
+
+        private void Settings_OppositeTapStartDelayModeChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE);
+        }
+
+        private void Settings_OppositeTapStartDelayMsChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS);
+        }
+
+        private void Settings_OppositeTapStartDelayVariancePercentChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT);
+        }
+
+        private void Settings_OppositeTapStartDelayMinimumMsChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS);
+        }
+
+        private void Settings_OppositeTapStartDelayMaximumMsChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS);
+        }
+
+        private void Settings_CounterMovementMinimumHoldMsChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_MIN_HOLD_MS);
+        }
+
+        private void Settings_RequiredStickDeflectionThresholdChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.REQUIRED_STICK_DEFLECTION_THRESHOLD);
+        }
+
+        private void AnalogEmulationActionSerializer_NameChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.NAME);
+        }
+
+        private void Settings_DeadZoneChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.DEAD_ZONE);
+        }
+
+        private void Settings_SeparateAxisDeadZonesChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.SEPARATE_AXIS_DEAD_ZONES);
+        }
+
+        private void Settings_DeadZoneXChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.DEAD_ZONE_X);
+        }
+
+        private void Settings_DeadZoneYChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.DEAD_ZONE_Y);
+        }
+
+        private void Settings_DeadZoneTypeChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.DEAD_ZONE_TYPE);
+        }
+
+        private void Settings_RotationChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.ROTATION);
+        }
+
+        private void Settings_MaxZoneChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.MAX_ZONE);
+        }
+
+        private void Settings_DirectionModeChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.DIRECTION_MODE);
+        }
+
+        private void Settings_DiagonalZoneWidthChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.DIAGONAL_ZONE_WIDTH);
+        }
+
+        private void Settings_DirectionPulseTimeMsChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.DIRECTION_PULSE_TIME_MS);
+        }
+
+        private void Settings_AnalogSpeedEmulationEnabledChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.SPEED_ENABLED);
+        }
+
+        private void Settings_AnalogEmulationActivePercentChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.SPEED_ACTIVE_PERCENT);
+        }
+
+        private void Settings_AnalogEmulationPulseTimeMsChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.SPEED_PULSE_TIME_MS);
+        }
+
+        private void Settings_FullSpeedThresholdPercentChanged(object sender, EventArgs e)
+        {
+            analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.FULL_SPEED_THRESHOLD_PERCENT);
+        }
+
+        // Pre-serialize
+        public AnalogEmulationActionSerializer(ActionLayer tempLayer, MapAction action) :
+            base(tempLayer, action)
+        {
+            if (action is StickAnalogEmulationAction temp)
+            {
+                analogAct = temp;
+                mapAction = analogAct;
+                settings = new AnalogEmulationSettings(analogAct);
+                PopulateFuncs();
+            }
+        }
+
+        // Pre-serialize
+        private void PopulateFuncs()
+        {
+            List<ActionFuncSerializer> tempFuncs = new List<ActionFuncSerializer>();
+
+            for (int i = 0; i < SlotNames.Length; i++)
+            {
+                AxisDirButton dirButton = analogAct.DirButtons[i];
+                if (dirButton == null) continue;
+
+                tempFuncs.Clear();
+                foreach (ActionFunc tempFunc in dirButton.ActionFuncs)
+                {
+                    ActionFuncSerializer tempSerializer =
+                        ActionFuncSerializerFactory.CreateSerializer(tempFunc);
+                    if (tempSerializer != null)
+                    {
+                        tempFuncs.Add(tempSerializer);
+                    }
+                }
+
+                dictDirBindings.Add(SlotNames[i],
+                    new StickPadActionSerializer.StickPadDirBinding()
+                    {
+                        ActionDirName = dirButton.Name,
+                        ActionFuncSerializers = new List<ActionFuncSerializer>(tempFuncs),
+                    });
+            }
+        }
+
+        // Post-deserialize
+        public override void PopulateMap()
+        {
+            foreach (AxisDirButton dirButton in analogAct.DirButtons)
+            {
+                dirButton?.ActionFuncs.Clear();
+            }
+
+            foreach (KeyValuePair<string, StickPadActionSerializer.StickPadDirBinding> tempKeyPair in dictDirBindings)
+            {
+                int idx = Array.IndexOf(SlotNames, tempKeyPair.Key);
+                if (idx < 0) continue;
+
+                AxisDirButton tempDirButton = analogAct.DirButtons[idx];
+                if (tempDirButton == null) continue;
+
+                tempDirButton.Name = tempKeyPair.Value.ActionDirName;
+
+                foreach (ActionFuncSerializer serializer in tempKeyPair.Value.ActionFuncSerializers)
+                {
+                    serializer.PopulateFunc();
+                    tempDirButton.ActionFuncs.Add(serializer.ActionFunc);
+                }
+
+                FlagBtnChangedDirection(idx, analogAct);
+            }
+
+            MigrateLegacyCounterMovementReleasePressFields();
+        }
+
+        // See StickPadActionSerializer.MigrateLegacyCounterMovementReleasePressFields for
+        // the full rationale; Analog Emulation shares the same
+        // CounterMovementReleasePressProcessor type and the same legacy field names.
+        // See TouchpadActionPadSerializer.MigrateLegacyCounterMovementReleasePressFields for
+        // the three profile generations this handles.
+        private void MigrateLegacyCounterMovementReleasePressFields()
+        {
+            if (settings.LegacyBrakeEnabled.HasValue &&
+                !analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED))
+            {
+                analogAct.CounterMovementReleasePress.Enabled = settings.LegacyBrakeEnabled.Value;
+                analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED);
+            }
+
+            bool modeFieldPresent = analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+
+            if (settings.LegacyBrakeDurationMs.HasValue)
+            {
+                int legacyDuration = DigitalReleasePressPulse.ClampReleasePressDurationMs(settings.LegacyBrakeDurationMs.Value);
+
+                if (!analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS))
+                {
+                    analogAct.CounterMovementReleasePress.OppositeTapLengthMinimumMs = legacyDuration;
+                    analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS);
+                }
+
+                if (!analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS))
+                {
+                    analogAct.CounterMovementReleasePress.OppositeTapLengthMaximumMs = legacyDuration;
+                    analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS);
+                }
+
+                if (!analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS))
+                {
+                    analogAct.CounterMovementReleasePress.OppositeTapLengthMs = legacyDuration;
+                    analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS);
+                }
+
+                if (!analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT))
+                {
+                    analogAct.CounterMovementReleasePress.OppositeTapLengthVariancePercent = 0;
+                    analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT);
+                }
+
+                if (!modeFieldPresent)
+                {
+                    analogAct.CounterMovementReleasePress.OppositeTapLengthMode = OppositeTapLengthMode.Fixed;
+                    analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+                }
+
+                if (!analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS))
+                {
+                    analogAct.CounterMovementReleasePress.OppositeTapStartDelayMinimumMs = 0;
+                    analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS);
+                }
+
+                if (!analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS))
+                {
+                    analogAct.CounterMovementReleasePress.OppositeTapStartDelayMaximumMs = 0;
+                    analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS);
+                }
+
+                if (!analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE))
+                {
+                    analogAct.CounterMovementReleasePress.OppositeTapStartDelayMode = OppositeTapStartDelayMode.Fixed;
+                    analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE);
+                }
+
+                if (!analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS))
+                {
+                    analogAct.CounterMovementReleasePress.OppositeTapStartDelayMs = 0;
+                    analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS);
+                }
+
+                if (!analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT))
+                {
+                    analogAct.CounterMovementReleasePress.OppositeTapStartDelayVariancePercent = 0;
+                    analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT);
+                }
+
+                if (!analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET))
+                {
+                    analogAct.CounterMovementReleasePress.TapLengthPreset = DS4MapperTest.StickActions.CounterMovementTapLengthPreset.Custom;
+                    analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET);
+                }
+            }
+            else if (!modeFieldPresent &&
+                (analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS) ||
+                 analogAct.ChangedProperties.Contains(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS)))
+            {
+                analogAct.CounterMovementReleasePress.OppositeTapLengthMode = OppositeTapLengthMode.MinimumAndMaximum;
+                analogAct.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE);
+                analogAct.CounterMovementReleasePress.ApplyMinimumAndMaximum(
+                    analogAct.CounterMovementReleasePress.OppositeTapLengthMinimumMs,
+                    analogAct.CounterMovementReleasePress.OppositeTapLengthMaximumMs);
+            }
+
+            analogAct.CounterMovementReleasePress.NormalizeRanges();
+        }
+
+        public void FlagBtnChangedDirection(int idx, StickAnalogEmulationAction action)
+        {
+            switch ((StickAnalogEmulationAction.DirSlot)idx)
+            {
+                case StickAnalogEmulationAction.DirSlot.Up:
+                    action.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.DIR_UP);
+                    break;
+                case StickAnalogEmulationAction.DirSlot.Down:
+                    action.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.DIR_DOWN);
+                    break;
+                case StickAnalogEmulationAction.DirSlot.Left:
+                    action.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.DIR_LEFT);
+                    break;
+                case StickAnalogEmulationAction.DirSlot.Right:
+                    action.ChangedProperties.Add(StickAnalogEmulationAction.PropertyKeyStrings.DIR_RIGHT);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
     public class StickMouseSerializer : MapActionSerializer
     {
+        private static readonly string[] SlotNames = { "Up", "Down", "Left", "Right" };
+
         public class StickMouseSettings
         {
             public class DeltaAccelSettingsSerializer
@@ -4971,17 +8622,28 @@ namespace DS4MapperTest
             private StickMouse stickMouseAction;
             private DeltaAccelSettingsSerializer mouseDeltaSettingsSerializer;
 
-            public int MouseSpeed
+            public double DegreesPerSecond
             {
-                get => stickMouseAction.MouseSpeed;
+                get => stickMouseAction.DegreesPerSecond;
                 set
                 {
-                    stickMouseAction.MouseSpeed = value;
-                    MouseSpeedChanged?.Invoke(this, EventArgs.Empty);
+                    stickMouseAction.DegreesPerSecond = value;
+                    DegreesPerSecondChanged?.Invoke(this, EventArgs.Empty);
                 }
             }
 
-            public event EventHandler MouseSpeedChanged;
+            public event EventHandler DegreesPerSecondChanged;
+
+            public int MouseSpeed
+            {
+                get => 0;
+                set => stickMouseAction.LegacyMouseSpeedLoaded = true;
+            }
+
+            public bool ShouldSerializeMouseSpeed()
+            {
+                return false;
+            }
 
             public double DeadZone
             {
@@ -4994,6 +8656,45 @@ namespace DS4MapperTest
             }
             public event EventHandler DeadZoneChanged;
 
+            public bool SeparateAxisDeadZones
+            {
+                get => stickMouseAction.DeadMod.SeparateAxisDeadZones;
+                set
+                {
+                    stickMouseAction.DeadMod.SeparateAxisDeadZones = value;
+                    SeparateAxisDeadZonesChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler SeparateAxisDeadZonesChanged;
+            public bool ShouldSerializeSeparateAxisDeadZones() =>
+                stickMouseAction.DeadMod.SeparateAxisDeadZones;
+
+            public double DeadZoneX
+            {
+                get => stickMouseAction.DeadMod.DeadZoneX;
+                set
+                {
+                    stickMouseAction.DeadMod.DeadZoneX = Math.Clamp(value, 0.0, 1.0);
+                    DeadZoneXChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DeadZoneXChanged;
+            public bool ShouldSerializeDeadZoneX() =>
+                stickMouseAction.DeadMod.SeparateAxisDeadZones;
+
+            public double DeadZoneY
+            {
+                get => stickMouseAction.DeadMod.DeadZoneY;
+                set
+                {
+                    stickMouseAction.DeadMod.DeadZoneY = Math.Clamp(value, 0.0, 1.0);
+                    DeadZoneYChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DeadZoneYChanged;
+            public bool ShouldSerializeDeadZoneY() =>
+                stickMouseAction.DeadMod.SeparateAxisDeadZones;
+
             public double MaxZone
             {
                 get => stickMouseAction.DeadMod.MaxZone;
@@ -5004,6 +8705,17 @@ namespace DS4MapperTest
                 }
             }
             public event EventHandler MaxZoneChanged;
+
+            public int DiagonalRange
+            {
+                get => stickMouseAction.DiagonalRange;
+                set
+                {
+                    stickMouseAction.DiagonalRange = value;
+                    DiagonalRangeChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DiagonalRangeChanged;
 
             [JsonConverter(typeof(SafeStringEnumConverter),
                 StickOutCurve.Curve.Linear)]
@@ -5029,6 +8741,76 @@ namespace DS4MapperTest
             }
             public event EventHandler DeltaSettingsChanged;
 
+            public double VerticalScale
+            {
+                get => stickMouseAction.VerticalScale;
+                set
+                {
+                    stickMouseAction.VerticalScale = value;
+                    VerticalScaleChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler VerticalScaleChanged;
+
+            public bool MultiplierCompensation
+            {
+                get => stickMouseAction.MultiplierCompensation;
+                set
+                {
+                    stickMouseAction.MultiplierCompensation = value;
+                    MultiplierCompensationChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MultiplierCompensationChanged;
+
+            public bool ShouldSerializeMultiplierCompensation() =>
+                stickMouseAction.ChangedProperties.Contains(StickMouse.PropertyKeyStrings.MULTIPLIER_COMPENSATION);
+
+            public double AccelerationMultiplier
+            {
+                get => stickMouseAction.AccelerationMultiplier;
+                set
+                {
+                    stickMouseAction.AccelerationMultiplier = Math.Clamp(value, 0.01, 100.0);
+                    AccelerationMultiplierChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler AccelerationMultiplierChanged;
+
+            public bool ShouldSerializeAccelerationMultiplier() =>
+                stickMouseAction.MultiplierCompensation ||
+                stickMouseAction.ChangedProperties.Contains(StickMouse.PropertyKeyStrings.ACCELERATION_MULTIPLIER);
+
+            public double VerticalAccelerationMultiplier
+            {
+                get => stickMouseAction.VerticalAccelerationMultiplier;
+                set
+                {
+                    stickMouseAction.VerticalAccelerationMultiplier = Math.Clamp(value, 0.01, 100.0);
+                    VerticalAccelerationMultiplierChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler VerticalAccelerationMultiplierChanged;
+
+            public bool ShouldSerializeVerticalAccelerationMultiplier() =>
+                stickMouseAction.MultiplierCompensation ||
+                stickMouseAction.ChangedProperties.Contains(StickMouse.PropertyKeyStrings.VERTICAL_ACCELERATION_MULTIPLIER);
+
+            public bool VerticalAccelerationScaleMode
+            {
+                get => stickMouseAction.VerticalAccelerationScaleMode;
+                set
+                {
+                    stickMouseAction.VerticalAccelerationScaleMode = value;
+                    VerticalAccelerationScaleModeChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler VerticalAccelerationScaleModeChanged;
+
+            public bool ShouldSerializeVerticalAccelerationScaleMode() =>
+                stickMouseAction.MultiplierCompensation ||
+                stickMouseAction.ChangedProperties.Contains(StickMouse.PropertyKeyStrings.VERTICAL_ACCELERATION_SCALE_MODE);
+
             public StickMouseSettings(StickMouse mouseAction)
             {
                 stickMouseAction = mouseAction;
@@ -5039,6 +8821,20 @@ namespace DS4MapperTest
         private StickMouse stickMouseAction =
             new StickMouse();
 
+        private Dictionary<string, StickPadActionSerializer.StickPadDirBinding> dictDirBindings =
+            new Dictionary<string, StickPadActionSerializer.StickPadDirBinding>();
+
+        public Dictionary<string, StickPadActionSerializer.StickPadDirBinding> DictDirBindings
+        {
+            get => dictDirBindings;
+            set => dictDirBindings = value;
+        }
+
+        public bool ShouldSerializeDictDirBindings()
+        {
+            return dictDirBindings.Count > 0;
+        }
+
         private StickMouseSettings settings;
         public StickMouseSettings Settings { get => settings; set => settings = value; }
 
@@ -5048,11 +8844,20 @@ namespace DS4MapperTest
             settings = new StickMouseSettings(stickMouseAction);
 
             NameChanged += StickMouseSerializer_NameChanged;
-            settings.MouseSpeedChanged += Settings_MouseSpeedChanged;
+            settings.DegreesPerSecondChanged += Settings_DegreesPerSecondChanged;
             settings.DeadZoneChanged += Settings_DeadZoneChanged;
+            settings.SeparateAxisDeadZonesChanged += Settings_SeparateAxisDeadZonesChanged;
+            settings.DeadZoneXChanged += Settings_DeadZoneXChanged;
+            settings.DeadZoneYChanged += Settings_DeadZoneYChanged;
             settings.MaxZoneChanged += Settings_MaxZoneChanged;
+            settings.DiagonalRangeChanged += Settings_DiagonalRangeChanged;
             settings.OutputCurveChanged += Settings_OutputCurveChanged;
             settings.DeltaSettingsChanged += Settings_DeltaSettingsChanged;
+            settings.VerticalScaleChanged += Settings_VerticalScaleChanged;
+            settings.MultiplierCompensationChanged += Settings_MultiplierCompensationChanged;
+            settings.AccelerationMultiplierChanged += Settings_AccelerationMultiplierChanged;
+            settings.VerticalAccelerationMultiplierChanged += Settings_VerticalAccelerationMultiplierChanged;
+            settings.VerticalAccelerationScaleModeChanged += Settings_VerticalAccelerationScaleModeChanged;
         }
 
         public StickMouseSerializer(ActionLayer tempLayer, MapAction action) :
@@ -5063,12 +8868,84 @@ namespace DS4MapperTest
                 stickMouseAction = temp;
                 mapAction = stickMouseAction;
                 settings = new StickMouseSettings(stickMouseAction);
+                PopulateFuncs();
+            }
+        }
+
+        private void PopulateFuncs()
+        {
+            List<ActionFuncSerializer> tempFuncs = new List<ActionFuncSerializer>();
+
+            for (int i = 0; i < SlotNames.Length; i++)
+            {
+                AxisDirButton dirButton = stickMouseAction.DirButtons[i];
+                if (dirButton == null) continue;
+
+                tempFuncs.Clear();
+                foreach (ActionFunc tempFunc in dirButton.ActionFuncs)
+                {
+                    ActionFuncSerializer tempSerializer =
+                        ActionFuncSerializerFactory.CreateSerializer(tempFunc);
+                    if (tempSerializer != null)
+                    {
+                        tempFuncs.Add(tempSerializer);
+                    }
+                }
+
+                dictDirBindings.Add(SlotNames[i],
+                    new StickPadActionSerializer.StickPadDirBinding()
+                    {
+                        ActionDirName = dirButton.Name,
+                        ActionFuncSerializers = new List<ActionFuncSerializer>(tempFuncs),
+                    });
+            }
+        }
+
+        public override void PopulateMap()
+        {
+            foreach (AxisDirButton dirButton in stickMouseAction.DirButtons)
+            {
+                dirButton?.ActionFuncs.Clear();
+            }
+
+            foreach (KeyValuePair<string, StickPadActionSerializer.StickPadDirBinding> tempKeyPair in dictDirBindings)
+            {
+                int idx = Array.IndexOf(SlotNames, tempKeyPair.Key);
+                if (idx < 0) continue;
+
+                AxisDirButton tempDirButton = stickMouseAction.DirButtons[idx];
+                if (tempDirButton == null) continue;
+
+                tempDirButton.Name = tempKeyPair.Value.ActionDirName;
+
+                foreach (ActionFuncSerializer serializer in tempKeyPair.Value.ActionFuncSerializers)
+                {
+                    serializer.PopulateFunc();
+                    tempDirButton.ActionFuncs.Add(serializer.ActionFunc);
+                }
+
+                FlagBtnChangedDirection(idx, stickMouseAction);
             }
         }
 
         private void Settings_DeltaSettingsChanged(object sender, EventArgs e)
         {
             stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.DELTA_SETTINGS);
+        }
+
+        private void Settings_SeparateAxisDeadZonesChanged(object sender, EventArgs e)
+        {
+            stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.DEAD_ZONE);
+        }
+
+        private void Settings_DeadZoneXChanged(object sender, EventArgs e)
+        {
+            stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.DEAD_ZONE);
+        }
+
+        private void Settings_DeadZoneYChanged(object sender, EventArgs e)
+        {
+            stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.DEAD_ZONE);
         }
 
         private void Settings_OutputCurveChanged(object sender, EventArgs e)
@@ -5081,19 +8958,360 @@ namespace DS4MapperTest
             stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.MAX_ZONE);
         }
 
+        private void Settings_DiagonalRangeChanged(object sender, EventArgs e)
+        {
+            stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.DIAGONAL_RANGE);
+        }
+
         private void StickMouseSerializer_NameChanged(object sender, EventArgs e)
         {
             stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.NAME);
         }
 
-        private void Settings_MouseSpeedChanged(object sender, EventArgs e)
+        private void Settings_DegreesPerSecondChanged(object sender, EventArgs e)
         {
-            stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.MOUSE_SPEED);
+            stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.DEGREES_PER_SECOND);
         }
 
         private void Settings_DeadZoneChanged(object sender, EventArgs e)
         {
             stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.DEAD_ZONE);
+        }
+
+        private void Settings_VerticalScaleChanged(object sender, EventArgs e)
+        {
+            stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.VERTICAL_SCALE);
+        }
+
+        private void Settings_MultiplierCompensationChanged(object sender, EventArgs e)
+        {
+            stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.MULTIPLIER_COMPENSATION);
+        }
+
+        private void Settings_AccelerationMultiplierChanged(object sender, EventArgs e)
+        {
+            stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.ACCELERATION_MULTIPLIER);
+        }
+
+        private void Settings_VerticalAccelerationMultiplierChanged(object sender, EventArgs e)
+        {
+            stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.VERTICAL_ACCELERATION_MULTIPLIER);
+        }
+
+        private void Settings_VerticalAccelerationScaleModeChanged(object sender, EventArgs e)
+        {
+            stickMouseAction.ChangedProperties.Add(StickMouse.PropertyKeyStrings.VERTICAL_ACCELERATION_SCALE_MODE);
+        }
+
+        private static void FlagBtnChangedDirection(int index, StickMouse action)
+        {
+            switch (index)
+            {
+                case (int)StickMouse.DirSlot.Up:
+                    action.ChangedProperties.Add(StickMouse.PropertyKeyStrings.DIR_UP);
+                    break;
+                case (int)StickMouse.DirSlot.Down:
+                    action.ChangedProperties.Add(StickMouse.PropertyKeyStrings.DIR_DOWN);
+                    break;
+                case (int)StickMouse.DirSlot.Left:
+                    action.ChangedProperties.Add(StickMouse.PropertyKeyStrings.DIR_LEFT);
+                    break;
+                case (int)StickMouse.DirSlot.Right:
+                    action.ChangedProperties.Add(StickMouse.PropertyKeyStrings.DIR_RIGHT);
+                    break;
+            }
+        }
+    }
+
+    public class StickHybridAimActionSerializer : MapActionSerializer
+    {
+        public class StickHybridAimSettings
+        {
+            private StickHybridAim hybridAimAction;
+
+            public int StickSens
+            {
+                get => hybridAimAction.StickSens;
+                set
+                {
+                    hybridAimAction.StickSens = value;
+                    StickSensChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler StickSensChanged;
+
+            public double MouselikeFactor
+            {
+                get => hybridAimAction.MouselikeFactor;
+                set
+                {
+                    hybridAimAction.MouselikeFactor = value;
+                    MouselikeFactorChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MouselikeFactorChanged;
+
+            public double DeadZone
+            {
+                get => hybridAimAction.DeadMod.DeadZone;
+                set
+                {
+                    hybridAimAction.DeadMod.DeadZone = value;
+                    DeadZoneChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DeadZoneChanged;
+
+            public double MaxZone
+            {
+                get => hybridAimAction.DeadMod.MaxZone;
+                set
+                {
+                    hybridAimAction.DeadMod.MaxZone = value;
+                    MaxZoneChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MaxZoneChanged;
+
+            [JsonConverter(typeof(SafeStringEnumConverter),
+                StickOutCurve.Curve.Linear)]
+            public StickOutCurve.Curve OutputCurve
+            {
+                get => hybridAimAction.OutputCurve;
+                set
+                {
+                    hybridAimAction.OutputCurve = value;
+                    OutputCurveChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler OutputCurveChanged;
+
+            public bool EdgePushEnabled
+            {
+                get => hybridAimAction.EdgePushEnabled;
+                set
+                {
+                    hybridAimAction.EdgePushEnabled = value;
+                    EdgePushEnabledChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler EdgePushEnabledChanged;
+
+            public bool ReturnDeadzoneEnabled
+            {
+                get => hybridAimAction.ReturnDeadzoneEnabled;
+                set
+                {
+                    hybridAimAction.ReturnDeadzoneEnabled = value;
+                    ReturnDeadzoneEnabledChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler ReturnDeadzoneEnabledChanged;
+
+            public double ReturnDeadzoneAngle
+            {
+                get => hybridAimAction.ReturnDeadzoneAngle;
+                set
+                {
+                    hybridAimAction.ReturnDeadzoneAngle = value;
+                    ReturnDeadzoneAngleChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler ReturnDeadzoneAngleChanged;
+
+            public double ReturnDeadzoneCutoffAngle
+            {
+                get => hybridAimAction.ReturnDeadzoneCutoffAngle;
+                set
+                {
+                    hybridAimAction.ReturnDeadzoneCutoffAngle = value;
+                    ReturnDeadzoneCutoffAngleChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler ReturnDeadzoneCutoffAngleChanged;
+
+            public StickHybridAimSettings(StickHybridAim hybridAimAction)
+            {
+                this.hybridAimAction = hybridAimAction;
+            }
+        }
+
+        private StickHybridAim hybridAimAction =
+            new StickHybridAim();
+
+        private StickHybridAimSettings settings;
+        public StickHybridAimSettings Settings { get => settings; set => settings = value; }
+
+        public StickHybridAimActionSerializer() : base()
+        {
+            mapAction = hybridAimAction;
+            settings = new StickHybridAimSettings(hybridAimAction);
+
+            NameChanged += StickHybridAimActionSerializer_NameChanged;
+            settings.StickSensChanged += Settings_StickSensChanged;
+            settings.MouselikeFactorChanged += Settings_MouselikeFactorChanged;
+            settings.DeadZoneChanged += Settings_DeadZoneChanged;
+            settings.MaxZoneChanged += Settings_MaxZoneChanged;
+            settings.OutputCurveChanged += Settings_OutputCurveChanged;
+            settings.EdgePushEnabledChanged += Settings_EdgePushEnabledChanged;
+            settings.ReturnDeadzoneEnabledChanged += Settings_ReturnDeadzoneEnabledChanged;
+            settings.ReturnDeadzoneAngleChanged += Settings_ReturnDeadzoneAngleChanged;
+            settings.ReturnDeadzoneCutoffAngleChanged += Settings_ReturnDeadzoneCutoffAngleChanged;
+        }
+
+        public StickHybridAimActionSerializer(ActionLayer tempLayer, MapAction action) :
+            base(tempLayer, action)
+        {
+            if (action is StickHybridAim temp)
+            {
+                hybridAimAction = temp;
+                mapAction = hybridAimAction;
+                settings = new StickHybridAimSettings(hybridAimAction);
+            }
+        }
+
+        private void StickHybridAimActionSerializer_NameChanged(object sender, EventArgs e)
+        {
+            hybridAimAction.ChangedProperties.Add(StickHybridAim.PropertyKeyStrings.NAME);
+        }
+
+        private void Settings_StickSensChanged(object sender, EventArgs e)
+        {
+            hybridAimAction.ChangedProperties.Add(StickHybridAim.PropertyKeyStrings.STICK_SENS);
+        }
+
+        private void Settings_MouselikeFactorChanged(object sender, EventArgs e)
+        {
+            hybridAimAction.ChangedProperties.Add(StickHybridAim.PropertyKeyStrings.MOUSELIKE_FACTOR);
+        }
+
+        private void Settings_DeadZoneChanged(object sender, EventArgs e)
+        {
+            hybridAimAction.ChangedProperties.Add(StickHybridAim.PropertyKeyStrings.DEAD_ZONE);
+        }
+
+        private void Settings_MaxZoneChanged(object sender, EventArgs e)
+        {
+            hybridAimAction.ChangedProperties.Add(StickHybridAim.PropertyKeyStrings.MAX_ZONE);
+        }
+
+        private void Settings_OutputCurveChanged(object sender, EventArgs e)
+        {
+            hybridAimAction.ChangedProperties.Add(StickHybridAim.PropertyKeyStrings.OUTPUT_CURVE);
+        }
+
+        private void Settings_EdgePushEnabledChanged(object sender, EventArgs e)
+        {
+            hybridAimAction.ChangedProperties.Add(StickHybridAim.PropertyKeyStrings.EDGE_PUSH_ENABLED);
+        }
+
+        private void Settings_ReturnDeadzoneEnabledChanged(object sender, EventArgs e)
+        {
+            hybridAimAction.ChangedProperties.Add(StickHybridAim.PropertyKeyStrings.RETURN_DEADZONE_ENABLED);
+        }
+
+        private void Settings_ReturnDeadzoneAngleChanged(object sender, EventArgs e)
+        {
+            hybridAimAction.ChangedProperties.Add(StickHybridAim.PropertyKeyStrings.RETURN_DEADZONE_ANGLE);
+        }
+
+        private void Settings_ReturnDeadzoneCutoffAngleChanged(object sender, EventArgs e)
+        {
+            hybridAimAction.ChangedProperties.Add(StickHybridAim.PropertyKeyStrings.RETURN_DEADZONE_CUTOFF_ANGLE);
+        }
+    }
+
+    public class StickMouseRingActionSerializer : MapActionSerializer
+    {
+        public class StickMouseRingSettings
+        {
+            private StickMouseRing ringAction;
+
+            public double RingRadius
+            {
+                get => ringAction.RingRadius;
+                set
+                {
+                    ringAction.RingRadius = value;
+                    RingRadiusChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler RingRadiusChanged;
+
+            public double DeadZone
+            {
+                get => ringAction.DeadMod.DeadZone;
+                set
+                {
+                    ringAction.DeadMod.DeadZone = value;
+                    DeadZoneChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler DeadZoneChanged;
+
+            public double MaxZone
+            {
+                get => ringAction.DeadMod.MaxZone;
+                set
+                {
+                    ringAction.DeadMod.MaxZone = value;
+                    MaxZoneChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MaxZoneChanged;
+
+            public StickMouseRingSettings(StickMouseRing ringAction)
+            {
+                this.ringAction = ringAction;
+            }
+        }
+
+        private StickMouseRing ringAction =
+            new StickMouseRing();
+
+        private StickMouseRingSettings settings;
+        public StickMouseRingSettings Settings { get => settings; set => settings = value; }
+
+        public StickMouseRingActionSerializer() : base()
+        {
+            mapAction = ringAction;
+            settings = new StickMouseRingSettings(ringAction);
+
+            NameChanged += StickMouseRingActionSerializer_NameChanged;
+            settings.RingRadiusChanged += Settings_RingRadiusChanged;
+            settings.DeadZoneChanged += Settings_DeadZoneChanged;
+            settings.MaxZoneChanged += Settings_MaxZoneChanged;
+        }
+
+        public StickMouseRingActionSerializer(ActionLayer tempLayer, MapAction action) :
+            base(tempLayer, action)
+        {
+            if (action is StickMouseRing temp)
+            {
+                ringAction = temp;
+                mapAction = ringAction;
+                settings = new StickMouseRingSettings(ringAction);
+            }
+        }
+
+        private void StickMouseRingActionSerializer_NameChanged(object sender, EventArgs e)
+        {
+            ringAction.ChangedProperties.Add(StickMouseRing.PropertyKeyStrings.NAME);
+        }
+
+        private void Settings_RingRadiusChanged(object sender, EventArgs e)
+        {
+            ringAction.ChangedProperties.Add(StickMouseRing.PropertyKeyStrings.RING_RADIUS);
+        }
+
+        private void Settings_DeadZoneChanged(object sender, EventArgs e)
+        {
+            ringAction.ChangedProperties.Add(StickMouseRing.PropertyKeyStrings.DEAD_ZONE);
+        }
+
+        private void Settings_MaxZoneChanged(object sender, EventArgs e)
+        {
+            ringAction.ChangedProperties.Add(StickMouseRing.PropertyKeyStrings.MAX_ZONE);
         }
     }
 
@@ -5967,6 +10185,51 @@ namespace DS4MapperTest
             }
             public event EventHandler DeadZoneChanged;
 
+            public double VerticalDeadZone
+            {
+                get => gyroMouseAction.mouseParams.verticalDeadZone;
+                set
+                {
+                    gyroMouseAction.mouseParams.verticalDeadZone = Math.Clamp(value, 0.0, 1000.0);
+                    VerticalDeadZoneChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler VerticalDeadZoneChanged;
+            public bool ShouldSerializeVerticalDeadZone()
+            {
+                return gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.VERTICAL_DEAD_ZONE);
+            }
+
+            public double GyroAngleSnapDegrees
+            {
+                get => gyroMouseAction.mouseParams.gyroAngleSnapDegrees;
+                set
+                {
+                    gyroMouseAction.mouseParams.gyroAngleSnapDegrees = Math.Clamp(value, 0.0, 45.0);
+                    GyroAngleSnapDegreesChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler GyroAngleSnapDegreesChanged;
+            public bool ShouldSerializeGyroAngleSnapDegrees()
+            {
+                return gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.ANGLE_SNAP_DEGREES);
+            }
+
+            public bool GyroSmoothAngleSnap
+            {
+                get => gyroMouseAction.mouseParams.gyroSmoothAngleSnap;
+                set
+                {
+                    gyroMouseAction.mouseParams.gyroSmoothAngleSnap = value;
+                    GyroSmoothAngleSnapChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler GyroSmoothAngleSnapChanged;
+            public bool ShouldSerializeGyroSmoothAngleSnap()
+            {
+                return gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.SMOOTH_ANGLE_SNAP);
+            }
+
             public double RealWorlCalibration
             {
                 get => gyroMouseAction.mouseParams.realWorldCalibration;
@@ -5977,6 +10240,7 @@ namespace DS4MapperTest
                 }
             }
             public event EventHandler RealWorldCalibrationChanged;
+            public bool ShouldSerializeRealWorlCalibration() => false;
 
             public double InGameSens
             {
@@ -5988,6 +10252,7 @@ namespace DS4MapperTest
                 }
             }
             public event EventHandler InGameSensChanged;
+            public bool ShouldSerializeInGameSens() => false;
 
             [JsonConverter(typeof(StringEnumConverter))]
             public GyroMouseAccelCurveChoice AccelCurve
@@ -6003,7 +10268,8 @@ namespace DS4MapperTest
             public bool ShouldSerializeAccelCurve()
             {
                 //return gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.ACCEL_CURVE);
-                return gyroMouseAction.mouseParams.accelCurve != GyroMouseAccelCurveChoice.None;
+                return gyroMouseAction.mouseParams.accelCurve !=
+                    GyroMouseParams.ACCEL_CURVE_DEFAULT;
             }
 
             public double MinAccelXSens
@@ -6221,6 +10487,14 @@ namespace DS4MapperTest
             }
             public event EventHandler TriggerActivatesChanged;
 
+            public int ActivationHoldMs
+            {
+                get => gyroMouseAction.mouseParams.activationHoldMs;
+                set => gyroMouseAction.mouseParams.activationHoldMs = Math.Clamp(value, 0, 60000);
+            }
+            public bool ShouldSerializeActivationHoldMs() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.ACTIVATION_HOLD_MS);
+
             [JsonConverter(typeof(StringEnumConverter))]
             public GyroActionsUtils.GyroTriggerEvalCond EvalCond
             {
@@ -6247,6 +10521,239 @@ namespace DS4MapperTest
                 }
             }
             public event EventHandler UseForXAxisChanged;
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public GyroSpaceChoice GyroSpace
+            {
+                get => gyroMouseAction.mouseParams.orientation.gyroSpace;
+                set
+                {
+                    gyroMouseAction.mouseParams.orientation.gyroSpace = value;
+                    GyroSpaceChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler GyroSpaceChanged;
+            public bool ShouldSerializeGyroSpace() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.GYRO_SPACE);
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public GyroLocalAxisSource HorizontalControl
+            {
+                get => gyroMouseAction.mouseParams.orientation.horizontal.source;
+                set
+                {
+                    gyroMouseAction.mouseParams.orientation.horizontal.source = value;
+                    HorizontalControlChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler HorizontalControlChanged;
+            public bool ShouldSerializeHorizontalControl() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.HORIZONTAL_CONTROL);
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public GyroLocalAxisSource VerticalControl
+            {
+                get => gyroMouseAction.mouseParams.orientation.vertical.source;
+                set
+                {
+                    gyroMouseAction.mouseParams.orientation.vertical.source = value;
+                    VerticalControlChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler VerticalControlChanged;
+            public bool ShouldSerializeVerticalControl() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.VERTICAL_CONTROL);
+
+            public bool HorizontalInvert
+            {
+                get => gyroMouseAction.mouseParams.orientation.horizontal.invertSingle;
+                set
+                {
+                    gyroMouseAction.mouseParams.orientation.horizontal.invertSingle = value;
+                    HorizontalInvertChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler HorizontalInvertChanged;
+            public bool ShouldSerializeHorizontalInvert() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.HORIZONTAL_INVERT);
+
+            public bool VerticalInvert
+            {
+                get => gyroMouseAction.mouseParams.orientation.vertical.invertSingle;
+                set
+                {
+                    gyroMouseAction.mouseParams.orientation.vertical.invertSingle = value;
+                    VerticalInvertChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler VerticalInvertChanged;
+            public bool ShouldSerializeVerticalInvert() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.VERTICAL_INVERT);
+
+            public double HorizontalYawContribution
+            {
+                get => gyroMouseAction.mouseParams.orientation.horizontal.yawContribution;
+                set
+                {
+                    gyroMouseAction.mouseParams.orientation.horizontal.yawContribution =
+                        Math.Clamp(value, GyroLocalAxisMapping.CONTRIBUTION_MIN, GyroLocalAxisMapping.CONTRIBUTION_MAX);
+                    HorizontalYawContributionChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler HorizontalYawContributionChanged;
+            public bool ShouldSerializeHorizontalYawContribution() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.HORIZONTAL_YAW_CONTRIBUTION);
+
+            public double HorizontalRollContribution
+            {
+                get => gyroMouseAction.mouseParams.orientation.horizontal.rollContribution;
+                set
+                {
+                    gyroMouseAction.mouseParams.orientation.horizontal.rollContribution =
+                        Math.Clamp(value, GyroLocalAxisMapping.CONTRIBUTION_MIN, GyroLocalAxisMapping.CONTRIBUTION_MAX);
+                    HorizontalRollContributionChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler HorizontalRollContributionChanged;
+            public bool ShouldSerializeHorizontalRollContribution() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.HORIZONTAL_ROLL_CONTRIBUTION);
+
+            public double VerticalYawContribution
+            {
+                get => gyroMouseAction.mouseParams.orientation.vertical.yawContribution;
+                set
+                {
+                    gyroMouseAction.mouseParams.orientation.vertical.yawContribution =
+                        Math.Clamp(value, GyroLocalAxisMapping.CONTRIBUTION_MIN, GyroLocalAxisMapping.CONTRIBUTION_MAX);
+                    VerticalYawContributionChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler VerticalYawContributionChanged;
+            public bool ShouldSerializeVerticalYawContribution() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.VERTICAL_YAW_CONTRIBUTION);
+
+            public double VerticalRollContribution
+            {
+                get => gyroMouseAction.mouseParams.orientation.vertical.rollContribution;
+                set
+                {
+                    gyroMouseAction.mouseParams.orientation.vertical.rollContribution =
+                        Math.Clamp(value, GyroLocalAxisMapping.CONTRIBUTION_MIN, GyroLocalAxisMapping.CONTRIBUTION_MAX);
+                    VerticalRollContributionChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler VerticalRollContributionChanged;
+            public bool ShouldSerializeVerticalRollContribution() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.VERTICAL_ROLL_CONTRIBUTION);
+
+            public bool GyroSpaceInvertX
+            {
+                get => gyroMouseAction.mouseParams.orientation.spaceInvertX;
+                set
+                {
+                    gyroMouseAction.mouseParams.orientation.spaceInvertX = value;
+                    GyroSpaceInvertXChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler GyroSpaceInvertXChanged;
+            public bool ShouldSerializeGyroSpaceInvertX() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.SPACE_INVERT_X);
+
+            public bool GyroSpaceInvertY
+            {
+                get => gyroMouseAction.mouseParams.orientation.spaceInvertY;
+                set
+                {
+                    gyroMouseAction.mouseParams.orientation.spaceInvertY = value;
+                    GyroSpaceInvertYChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler GyroSpaceInvertYChanged;
+            public bool ShouldSerializeGyroSpaceInvertY() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.SPACE_INVERT_Y);
+
+            public bool InvertGyroEnabled
+            {
+                get => gyroMouseAction.mouseParams.invert.enabled;
+                set
+                {
+                    gyroMouseAction.mouseParams.invert.enabled = value;
+                    InvertGyroEnabledChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler InvertGyroEnabledChanged;
+            public bool ShouldSerializeInvertGyroEnabled() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.INVERT_GYRO_ENABLED);
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public GyroInvertAxisChoice InvertGyroAxis
+            {
+                get => gyroMouseAction.mouseParams.invert.axisChoice;
+                set
+                {
+                    gyroMouseAction.mouseParams.invert.axisChoice = value;
+                    InvertGyroAxisChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler InvertGyroAxisChanged;
+            public bool ShouldSerializeInvertGyroAxis() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.INVERT_GYRO_AXIS);
+
+            [JsonConverter(typeof(TriggerButtonsConverter))]
+            public JoypadActionCodes[] InvertGyroTriggerButtons
+            {
+                get => gyroMouseAction.mouseParams.invert.triggerButtons;
+                set
+                {
+                    gyroMouseAction.mouseParams.invert.triggerButtons = value;
+                    InvertGyroTriggerButtonsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler InvertGyroTriggerButtonsChanged;
+            public bool ShouldSerializeInvertGyroTriggerButtons() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.INVERT_GYRO_TRIGGER_BUTTONS);
+
+            public bool InvertGyroTriggerActivates
+            {
+                get => gyroMouseAction.mouseParams.invert.triggerActivates;
+                set
+                {
+                    gyroMouseAction.mouseParams.invert.triggerActivates = value;
+                    InvertGyroTriggerActivatesChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler InvertGyroTriggerActivatesChanged;
+            public bool ShouldSerializeInvertGyroTriggerActivates() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.INVERT_GYRO_TRIGGER_ACTIVATES);
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public GyroActionsUtils.GyroTriggerEvalCond InvertGyroTriggerEvalCond
+            {
+                get => gyroMouseAction.mouseParams.invert.andCond ?
+                    GyroActionsUtils.GyroTriggerEvalCond.And : GyroActionsUtils.GyroTriggerEvalCond.Or;
+                set
+                {
+                    gyroMouseAction.mouseParams.invert.andCond =
+                        value == GyroActionsUtils.GyroTriggerEvalCond.And;
+                    InvertGyroTriggerEvalCondChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler InvertGyroTriggerEvalCondChanged;
+            public bool ShouldSerializeInvertGyroTriggerEvalCond() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.INVERT_GYRO_TRIGGER_EVAL_COND);
+
+            public int InvertGyroActivationHoldMs
+            {
+                get => gyroMouseAction.mouseParams.invert.activationHoldMs;
+                set
+                {
+                    gyroMouseAction.mouseParams.invert.activationHoldMs = Math.Clamp(value, 0, 60000);
+                    InvertGyroActivationHoldMsChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler InvertGyroActivationHoldMsChanged;
+            public bool ShouldSerializeInvertGyroActivationHoldMs() =>
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.INVERT_GYRO_ACTIVATION_HOLD_MS);
 
             public double MinThreshold
             {
@@ -6284,6 +10791,73 @@ namespace DS4MapperTest
             public bool ShouldSerializeJitterCompensation()
             {
                 return gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.JITTER_COMPENSATION);
+            }
+
+            public bool MultiplierCompensation
+            {
+                get => gyroMouseAction.mouseParams.multiplierCompensation;
+                set
+                {
+                    gyroMouseAction.mouseParams.multiplierCompensation = value;
+                    MultiplierCompensationChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler MultiplierCompensationChanged;
+
+            public bool ShouldSerializeMultiplierCompensation()
+            {
+                return gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.MULTIPLIER_COMPENSATION);
+            }
+
+            public double AccelerationMultiplier
+            {
+                get => gyroMouseAction.mouseParams.accelerationMultiplier;
+                set
+                {
+                    gyroMouseAction.mouseParams.accelerationMultiplier = Math.Clamp(value, 0.01, 100.0);
+                    AccelerationMultiplierChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler AccelerationMultiplierChanged;
+
+            public bool ShouldSerializeAccelerationMultiplier()
+            {
+                return gyroMouseAction.mouseParams.multiplierCompensation ||
+                    gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.ACCELERATION_MULTIPLIER);
+            }
+
+            public double VerticalAccelerationMultiplier
+            {
+                get => gyroMouseAction.mouseParams.verticalAccelerationMultiplier;
+                set
+                {
+                    gyroMouseAction.mouseParams.verticalAccelerationMultiplier = Math.Clamp(value, 0.01, 100.0);
+                    VerticalAccelerationMultiplierChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler VerticalAccelerationMultiplierChanged;
+
+            public bool ShouldSerializeVerticalAccelerationMultiplier()
+            {
+                return gyroMouseAction.mouseParams.multiplierCompensation ||
+                    gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.VERTICAL_ACCELERATION_MULTIPLIER);
+            }
+
+            public bool VerticalAccelerationScaleMode
+            {
+                get => gyroMouseAction.mouseParams.verticalAccelerationScaleMode;
+                set
+                {
+                    gyroMouseAction.mouseParams.verticalAccelerationScaleMode = value;
+                    VerticalAccelerationScaleModeChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            public event EventHandler VerticalAccelerationScaleModeChanged;
+
+            public bool ShouldSerializeVerticalAccelerationScaleMode()
+            {
+                return gyroMouseAction.mouseParams.multiplierCompensation ||
+                    gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.VERTICAL_ACCELERATION_SCALE_MODE);
             }
 
             public bool SmoothingEnabled
@@ -6333,6 +10907,70 @@ namespace DS4MapperTest
                 return gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.SMOOTHING_FILTER);
             }
 
+            public bool TriggerSensitivityModifierEnabled
+            {
+                get => gyroMouseAction.mouseParams.triggerSensitivityModifier.enabled;
+                set => gyroMouseAction.mouseParams.triggerSensitivityModifier.enabled = value;
+            }
+            [JsonConverter(typeof(StringEnumConverter))]
+            public TriggerSensitivityModifierTrigger TriggerSensitivityModifierTrigger
+            {
+                get => gyroMouseAction.mouseParams.triggerSensitivityModifier.trigger;
+                set => gyroMouseAction.mouseParams.triggerSensitivityModifier.trigger = value;
+            }
+            [JsonConverter(typeof(StringEnumConverter))]
+            public TriggerSensitivityModifierBehaviour TriggerSensitivityModifierBehaviour
+            {
+                get => gyroMouseAction.mouseParams.triggerSensitivityModifier.behaviour;
+                set => gyroMouseAction.mouseParams.triggerSensitivityModifier.behaviour = value;
+            }
+            [JsonConverter(typeof(StringEnumConverter))]
+            public TriggerSensitivityModifierConfigureUsing TriggerSensitivityModifierConfigureUsing
+            {
+                get => gyroMouseAction.mouseParams.triggerSensitivityModifier.configureUsing;
+                set => gyroMouseAction.mouseParams.triggerSensitivityModifier.configureUsing = value;
+            }
+            [JsonConverter(typeof(StringEnumConverter))]
+            public TriggerSensitivityModifierResponseCurve TriggerSensitivityModifierResponseCurve
+            {
+                get => gyroMouseAction.mouseParams.triggerSensitivityModifier.responseCurve;
+                set => gyroMouseAction.mouseParams.triggerSensitivityModifier.responseCurve = value;
+            }
+            public double TriggerSensitivityModifierTargetSensitivity
+            {
+                get => gyroMouseAction.mouseParams.triggerSensitivityModifier.targetSensitivity;
+                set => gyroMouseAction.mouseParams.triggerSensitivityModifier.targetSensitivity = Math.Clamp(value, 0.0, 100.0);
+            }
+            public double TriggerSensitivityModifierMultiplier
+            {
+                get => gyroMouseAction.mouseParams.triggerSensitivityModifier.multiplier;
+                set => gyroMouseAction.mouseParams.triggerSensitivityModifier.multiplier = Math.Clamp(value, 0.0, 100.0);
+            }
+            public bool TriggerSensitivityModifierModifyVerticalSensitivity
+            {
+                get => gyroMouseAction.mouseParams.triggerSensitivityModifier.modifyVerticalSensitivity;
+                set => gyroMouseAction.mouseParams.triggerSensitivityModifier.modifyVerticalSensitivity = value;
+            }
+            private bool ShouldSerializeTriggerSensitivityModifier() =>
+                gyroMouseAction.mouseParams.triggerSensitivityModifier.enabled ||
+                gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.TRIGGER_SENSITIVITY_MODIFIER);
+            public bool ShouldSerializeTriggerSensitivityModifierEnabled() =>
+                ShouldSerializeTriggerSensitivityModifier();
+            public bool ShouldSerializeTriggerSensitivityModifierTrigger() =>
+                ShouldSerializeTriggerSensitivityModifier();
+            public bool ShouldSerializeTriggerSensitivityModifierBehaviour() =>
+                ShouldSerializeTriggerSensitivityModifier();
+            public bool ShouldSerializeTriggerSensitivityModifierConfigureUsing() =>
+                ShouldSerializeTriggerSensitivityModifier();
+            public bool ShouldSerializeTriggerSensitivityModifierResponseCurve() =>
+                ShouldSerializeTriggerSensitivityModifier();
+            public bool ShouldSerializeTriggerSensitivityModifierTargetSensitivity() =>
+                ShouldSerializeTriggerSensitivityModifier();
+            public bool ShouldSerializeTriggerSensitivityModifierMultiplier() =>
+                ShouldSerializeTriggerSensitivityModifier();
+            public bool ShouldSerializeTriggerSensitivityModifierModifyVerticalSensitivity() =>
+                ShouldSerializeTriggerSensitivityModifier();
+
             public GyroMouseSettings(GyroMouse mouseAction)
             {
                 gyroMouseAction = mouseAction;
@@ -6355,6 +10993,9 @@ namespace DS4MapperTest
 
             NameChanged += GyroMouseSerializer_NameChanged;
             settings.DeadZoneChanged += Settings_DeadZoneChanged;
+            settings.VerticalDeadZoneChanged += Settings_VerticalDeadZoneChanged;
+            settings.GyroAngleSnapDegreesChanged += Settings_GyroAngleSnapDegreesChanged;
+            settings.GyroSmoothAngleSnapChanged += Settings_GyroSmoothAngleSnapChanged;
             settings.RealWorldCalibrationChanged += Settings_RealWorldCalibrationChanged;
             settings.InGameSensChanged += Settings_InGameSensChanged;
             settings.AccelCurveChanged += Settings_AccelCurveChanged;
@@ -6375,17 +11016,163 @@ namespace DS4MapperTest
             settings.TriggerActivatesChanged += Settings_TriggerActivatesChanged;
             settings.EvalCondChanged += Settings_EvalCondChanged;
             settings.UseForXAxisChanged += Settings_UseForXAxisChanged;
+            settings.GyroSpaceChanged += Settings_GyroSpaceChanged;
+            settings.HorizontalControlChanged += Settings_HorizontalControlChanged;
+            settings.VerticalControlChanged += Settings_VerticalControlChanged;
+            settings.HorizontalInvertChanged += Settings_HorizontalInvertChanged;
+            settings.VerticalInvertChanged += Settings_VerticalInvertChanged;
+            settings.HorizontalYawContributionChanged += Settings_HorizontalYawContributionChanged;
+            settings.HorizontalRollContributionChanged += Settings_HorizontalRollContributionChanged;
+            settings.VerticalYawContributionChanged += Settings_VerticalYawContributionChanged;
+            settings.VerticalRollContributionChanged += Settings_VerticalRollContributionChanged;
+            settings.GyroSpaceInvertXChanged += Settings_GyroSpaceInvertXChanged;
+            settings.GyroSpaceInvertYChanged += Settings_GyroSpaceInvertYChanged;
+            settings.InvertGyroEnabledChanged += Settings_InvertGyroEnabledChanged;
+            settings.InvertGyroAxisChanged += Settings_InvertGyroAxisChanged;
+            settings.InvertGyroTriggerButtonsChanged += Settings_InvertGyroTriggerButtonsChanged;
+            settings.InvertGyroTriggerActivatesChanged += Settings_InvertGyroTriggerActivatesChanged;
+            settings.InvertGyroTriggerEvalCondChanged += Settings_InvertGyroTriggerEvalCondChanged;
+            settings.InvertGyroActivationHoldMsChanged += Settings_InvertGyroActivationHoldMsChanged;
             settings.MinThresholdChanged += Settings_MinThresholdChanged;
             settings.ToggleChanged += Settings_ToggleChanged;
             settings.JitterCompensationChanged += Settings_JitterCompensationChanged;
+            settings.MultiplierCompensationChanged += Settings_MultiplierCompensationChanged;
+            settings.AccelerationMultiplierChanged += Settings_AccelerationMultiplierChanged;
+            settings.VerticalAccelerationMultiplierChanged += Settings_VerticalAccelerationMultiplierChanged;
+            settings.VerticalAccelerationScaleModeChanged += Settings_VerticalAccelerationScaleModeChanged;
             settings.SmoothingEnabledChanged += Settings_SmoothingEnabledChanged;
             settings.SmoothingMinCutoffChanged += Settings_SmoothingMinCutoffChanged;
             settings.SmoothingBetaChanged += Settings_SmoothingMinBetaChanged;
         }
 
+        private void Settings_GyroSpaceChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.GYRO_SPACE);
+        }
+
+        private void Settings_HorizontalControlChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.HORIZONTAL_CONTROL);
+        }
+
+        private void Settings_VerticalControlChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.VERTICAL_CONTROL);
+        }
+
+        private void Settings_HorizontalInvertChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.HORIZONTAL_INVERT);
+        }
+
+        private void Settings_VerticalInvertChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.VERTICAL_INVERT);
+        }
+
+        private void Settings_HorizontalYawContributionChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.HORIZONTAL_YAW_CONTRIBUTION);
+        }
+
+        private void Settings_HorizontalRollContributionChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.HORIZONTAL_ROLL_CONTRIBUTION);
+        }
+
+        private void Settings_VerticalYawContributionChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.VERTICAL_YAW_CONTRIBUTION);
+        }
+
+        private void Settings_VerticalRollContributionChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.VERTICAL_ROLL_CONTRIBUTION);
+        }
+
+        private void Settings_InvertGyroEnabledChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.INVERT_GYRO_ENABLED);
+        }
+
+        private void Settings_InvertGyroAxisChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.INVERT_GYRO_AXIS);
+        }
+
+        private void Settings_InvertGyroTriggerButtonsChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.INVERT_GYRO_TRIGGER_BUTTONS);
+        }
+
+        private void Settings_InvertGyroTriggerActivatesChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.INVERT_GYRO_TRIGGER_ACTIVATES);
+        }
+
+        private void Settings_InvertGyroTriggerEvalCondChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.INVERT_GYRO_TRIGGER_EVAL_COND);
+        }
+
+        private void Settings_InvertGyroActivationHoldMsChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.INVERT_GYRO_ACTIVATION_HOLD_MS);
+        }
+
+        private void Settings_GyroSpaceInvertXChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.SPACE_INVERT_X);
+        }
+
+        private void Settings_GyroSpaceInvertYChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.SPACE_INVERT_Y);
+        }
+
+        // Post-deserialize: migrate legacy InvertX/InvertY/UseForXAxis into the new
+        // orientation model when a loaded profile predates this feature. Gated on
+        // ChangedProperties so an explicit new-format value is never overwritten.
+        public override void PopulateMap()
+        {
+            MigrateLegacyOrientation();
+        }
+
+        private void MigrateLegacyOrientation()
+        {
+            if (!gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.HORIZONTAL_CONTROL))
+            {
+                gyroMouseAction.mouseParams.orientation.horizontal.source =
+                    gyroMouseAction.mouseParams.useForXAxis == GyroMouseXAxisChoice.Roll
+                        ? GyroLocalAxisSource.Roll : GyroLocalAxisSource.Yaw;
+                gyroMouseAction.mouseParams.orientation.horizontal.invertSingle = gyroMouseAction.mouseParams.invertX;
+                gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.HORIZONTAL_CONTROL);
+                gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.HORIZONTAL_INVERT);
+            }
+
+            if (!gyroMouseAction.ChangedProperties.Contains(GyroMouse.PropertyKeyStrings.VERTICAL_CONTROL))
+            {
+                // Vertical was always hardcoded to Pitch prior to this feature.
+                gyroMouseAction.mouseParams.orientation.vertical.source = GyroLocalAxisSource.Pitch;
+                gyroMouseAction.mouseParams.orientation.vertical.invertSingle = gyroMouseAction.mouseParams.invertY;
+                gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.VERTICAL_CONTROL);
+                gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.VERTICAL_INVERT);
+            }
+        }
+
         private void Settings_NaturalVHalfChanged(object sender, EventArgs e)
         {
             gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.NATURAL_CURVE_VHALF);
+        }
+
+        private void Settings_GyroAngleSnapDegreesChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.ANGLE_SNAP_DEGREES);
+        }
+
+        private void Settings_GyroSmoothAngleSnapChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.SMOOTH_ANGLE_SNAP);
         }
 
         private void Settings_MaxAccelYSensChanged(object sender, EventArgs e)
@@ -6446,6 +11233,26 @@ namespace DS4MapperTest
         private void Settings_JitterCompensationChanged(object sender, EventArgs e)
         {
             gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.JITTER_COMPENSATION);
+        }
+
+        private void Settings_MultiplierCompensationChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.MULTIPLIER_COMPENSATION);
+        }
+
+        private void Settings_AccelerationMultiplierChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.ACCELERATION_MULTIPLIER);
+        }
+
+        private void Settings_VerticalAccelerationMultiplierChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.VERTICAL_ACCELERATION_MULTIPLIER);
+        }
+
+        private void Settings_VerticalAccelerationScaleModeChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.VERTICAL_ACCELERATION_SCALE_MODE);
         }
 
         private void Settings_EvalCondChanged(object sender, EventArgs e)
@@ -6528,6 +11335,11 @@ namespace DS4MapperTest
         private void Settings_DeadZoneChanged(object sender, EventArgs e)
         {
             gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.DEAD_ZONE);
+        }
+
+        private void Settings_VerticalDeadZoneChanged(object sender, EventArgs e)
+        {
+            gyroMouseAction.ChangedProperties.Add(GyroMouse.PropertyKeyStrings.VERTICAL_DEAD_ZONE);
         }
 
         private void GyroMouseSerializer_NameChanged(object sender, EventArgs e)
@@ -6630,6 +11442,14 @@ namespace DS4MapperTest
                 }
             }
             public event EventHandler TriggerActivatesChanged;
+
+            public int ActivationHoldMs
+            {
+                get => gyroDirSwipeAction.swipeParams.activationHoldMs;
+                set => gyroDirSwipeAction.swipeParams.activationHoldMs = Math.Clamp(value, 0, 60000);
+            }
+            public bool ShouldSerializeActivationHoldMs() =>
+                gyroDirSwipeAction.ChangedProperties.Contains(GyroDirectionalSwipe.PropertyKeyStrings.ACTIVATION_HOLD_MS);
 
             [JsonConverter(typeof(StringEnumConverter))]
             public GyroActionsUtils.GyroTriggerEvalCond EvalCond
@@ -6976,6 +11796,14 @@ namespace DS4MapperTest
                 }
             }
             public event EventHandler TriggerActivatesChanged;
+
+            public int ActivationHoldMs
+            {
+                get => gyroMouseStickAction.mStickParams.activationHoldMs;
+                set => gyroMouseStickAction.mStickParams.activationHoldMs = Math.Clamp(value, 0, 60000);
+            }
+            public bool ShouldSerializeActivationHoldMs() =>
+                gyroMouseStickAction.ChangedProperties.Contains(GyroMouseJoystick.PropertyKeyStrings.ACTIVATION_HOLD_MS);
 
             [JsonConverter(typeof(StringEnumConverter))]
             public GyroActionsUtils.GyroTriggerEvalCond EvalCond
@@ -7345,6 +12173,26 @@ namespace DS4MapperTest
         }
     }
 
+    public class GyroPassthruActionSerializer : MapActionSerializer
+    {
+        private GyroPassthruAction gyroPassthruAction = new GyroPassthruAction();
+
+        public GyroPassthruActionSerializer() : base()
+        {
+            mapAction = gyroPassthruAction;
+        }
+
+        public GyroPassthruActionSerializer(ActionLayer tempLayer, MapAction action) :
+            base(tempLayer, action)
+        {
+            if (action is GyroPassthruAction temp)
+            {
+                gyroPassthruAction = temp;
+                mapAction = gyroPassthruAction;
+            }
+        }
+    }
+
     public class GyroPadActionSerializer : MapActionSerializer
     {
         public class GyroPadDirBinding
@@ -7640,7 +12488,6 @@ namespace DS4MapperTest
         public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
         {
             JObject j = JObject.Load(reader);
-            Trace.WriteLine("HUP RIDE");
             MapActionSerializer current = existingValue as MapActionSerializer;
 
             string actionOutput = j["ActionMode"]?.ToString();
@@ -7685,6 +12532,12 @@ namespace DS4MapperTest
                         JsonConvert.PopulateObject(j.ToString(), btnNoActinstance);
                         resultInstance = btnNoActinstance;
                         break;
+                    case "TouchpadPressureDualStageAction":
+                        TouchpadPressureDualStageActionSerializer touchPressureDualActInstance =
+                            new TouchpadPressureDualStageActionSerializer();
+                        JsonConvert.PopulateObject(j.ToString(), touchPressureDualActInstance);
+                        resultInstance = touchPressureDualActInstance;
+                        break;
                     case "StickPadAction":
                         StickPadActionSerializer stickPadInstance = new StickPadActionSerializer();
                         JsonConvert.PopulateObject(j.ToString(), stickPadInstance);
@@ -7722,6 +12575,21 @@ namespace DS4MapperTest
                         JsonConvert.PopulateObject(j.ToString(), flickInstance);
                         resultInstance = flickInstance;
                         break;
+                    case "StickHybridAimAction":
+                        StickHybridAimActionSerializer hybridAimInstance = new StickHybridAimActionSerializer();
+                        JsonConvert.PopulateObject(j.ToString(), hybridAimInstance);
+                        resultInstance = hybridAimInstance;
+                        break;
+                    case "StickMouseRingAction":
+                        StickMouseRingActionSerializer mouseRingInstance = new StickMouseRingActionSerializer();
+                        JsonConvert.PopulateObject(j.ToString(), mouseRingInstance);
+                        resultInstance = mouseRingInstance;
+                        break;
+                    case "StickAnalogEmulationAction":
+                        AnalogEmulationActionSerializer analogEmuInstance = new AnalogEmulationActionSerializer();
+                        JsonConvert.PopulateObject(j.ToString(), analogEmuInstance);
+                        resultInstance = analogEmuInstance;
+                        break;
                     case "StickNoAction":
                         StickNoActionSerializer stickNoActinstance = new StickNoActionSerializer();
                         JsonConvert.PopulateObject(j.ToString(), stickNoActinstance);
@@ -7741,6 +12609,11 @@ namespace DS4MapperTest
                         TriggerDualStageActionSerializer triggerDualActInstance = new TriggerDualStageActionSerializer();
                         JsonConvert.PopulateObject(j.ToString(), triggerDualActInstance);
                         resultInstance = triggerDualActInstance;
+                        break;
+                    case "TriggerMouseAction":
+                        TriggerMouseActionSerializer triggerMouseActInstance = new TriggerMouseActionSerializer();
+                        JsonConvert.PopulateObject(j.ToString(), triggerMouseActInstance);
+                        resultInstance = triggerMouseActInstance;
                         break;
                     case "TouchStickTranslateAction":
                         TouchpadStickActionSerializer touchStickActInstance = new TouchpadStickActionSerializer();
@@ -7797,6 +12670,11 @@ namespace DS4MapperTest
                         JsonConvert.PopulateObject(j.ToString(), touchNoActinstance);
                         resultInstance = touchNoActinstance;
                         break;
+                    case "TouchPassthruAction":
+                        TouchpadPassthruActionSerializer touchPassthruInstance = new TouchpadPassthruActionSerializer();
+                        JsonConvert.PopulateObject(j.ToString(), touchPassthruInstance);
+                        resultInstance = touchPassthruInstance;
+                        break;
                     case "DPadAction":
                         DpadActionSerializer dpadActSerializer = new DpadActionSerializer();
                         JsonConvert.PopulateObject(j.ToString(), dpadActSerializer);
@@ -7831,6 +12709,11 @@ namespace DS4MapperTest
                         GyroDirectionalSwipeSerializer gyroDirSwipeInstance = new GyroDirectionalSwipeSerializer();
                         JsonConvert.PopulateObject(j.ToString(), gyroDirSwipeInstance);
                         resultInstance = gyroDirSwipeInstance;
+                        break;
+                    case "GyroPassthruAction":
+                        GyroPassthruActionSerializer gyroPassthruInstance = new GyroPassthruActionSerializer();
+                        JsonConvert.PopulateObject(j.ToString(), gyroPassthruInstance);
+                        resultInstance = gyroPassthruInstance;
                         break;
                     case "GyroNoAction":
                         GyroNoMapActionSerializer gyroNoActinstance = new GyroNoMapActionSerializer();
@@ -8480,6 +13363,26 @@ namespace DS4MapperTest
 
                     resultInstance = new OutputActionDataSerializer(tempInstance);
                     break;
+                case ActionType.CameraTurn:
+                    tempInstance.OutputType = checkType;
+                    if (double.TryParse(j["Angle"]?.ToString(),
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double camAngle))
+                        tempInstance.cameraTurnAngle = camAngle;
+                    if (double.TryParse(j["Duration"]?.ToString(),
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double camDuration))
+                        tempInstance.cameraTurnDurationMs = camDuration;
+                    if (double.TryParse(j["Counts360"]?.ToString(),
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double camCounts360))
+                        tempInstance.cameraTurnCounts360 = camCounts360;
+                    resultInstance = new OutputActionDataSerializer(tempInstance);
+                    break;
+                case ActionType.RecalibrateGyro:
+                    tempInstance.OutputType = checkType;
+                    resultInstance = new OutputActionDataSerializer(tempInstance);
+                    break;
                 case ActionType.Empty:
                     tempInstance.OutputType = ActionType.Empty;
                     resultInstance = new OutputActionDataSerializer(tempInstance);
@@ -8593,6 +13496,12 @@ namespace DS4MapperTest
                         SerializeExtraJSONProperties(current.OutputData, tempJ);
                     }
 
+                    break;
+                case ActionType.CameraTurn:
+                    tempJ.Add("Angle", current.OutputData.cameraTurnAngle);
+                    tempJ.Add("Duration", current.OutputData.cameraTurnDurationMs);
+                    break;
+                case ActionType.RecalibrateGyro:
                     break;
                 default:
                     break;

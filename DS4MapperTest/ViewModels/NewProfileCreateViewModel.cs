@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -11,12 +11,19 @@ using static DS4MapperTest.Mapper;
 
 namespace DS4MapperTest.ViewModels
 {
-    public class NewProfileCreateViewModel : INotifyDataErrorInfo
+    public class NewProfileCreateViewModel : INotifyDataErrorInfo, INotifyPropertyChanged
     {
         private Mapper mapper;
         public Mapper Mapper => mapper;
 
         private BackendManager manager;
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        private void RaisePropertyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
 
         public class OutputContTypeAssoc
         {
@@ -24,29 +31,41 @@ namespace DS4MapperTest.ViewModels
             public OutputContType Type { get; set; }
         }
 
-        private string profilePath;
-        public string ProfilePath
+        private string profileName = string.Empty;
+        public string ProfileName
         {
-            get => profilePath;
+            get => profileName;
             set
             {
-                profilePath = value;
-                ProfilePathChanged?.Invoke(this, EventArgs.Empty);
+                if (profileName == value) return;
+                profileName = value;
+                RaisePropertyChanged(nameof(ProfileName));
+                RaisePropertyChanged(nameof(ProfilePath));
+                ValidateNameField();
             }
         }
-        public event EventHandler ProfilePathChanged;
 
-        private string creator;
-        public string Creator
+        private string profileFolder;
+        public string ProfileFolder
         {
-            get => creator;
+            get => profileFolder;
             set
             {
-                creator = value;
-                CreatorChanged?.Invoke(this, EventArgs.Empty);
+                if (profileFolder == value) return;
+                profileFolder = value;
+                RaisePropertyChanged(nameof(ProfileFolder));
+                RaisePropertyChanged(nameof(ProfilePath));
             }
         }
-        public event EventHandler CreatorChanged;
+
+        // Full destination file path, derived from the folder and name fields.
+        // Kept as a read-only property so callers that only care about the
+        // eventual file location (e.g. matching up the newly created profile
+        // in the profile list) don't need to know about the two-field split.
+        public string ProfilePath =>
+            string.IsNullOrEmpty(profileFolder) || string.IsNullOrEmpty(profileName)
+                ? string.Empty
+                : Path.Combine(profileFolder, profileName.Trim() + ".json");
 
         private bool profileCreated;
         public bool ProfileCreated
@@ -64,7 +83,9 @@ namespace DS4MapperTest.ViewModels
             get => outputControllerTypeIdx;
             set
             {
+                if (outputControllerTypeIdx == value) return;
                 outputControllerTypeIdx = value;
+                RaisePropertyChanged(nameof(OutputControllerTypeIdx));
             }
         }
 
@@ -72,16 +93,18 @@ namespace DS4MapperTest.ViewModels
         {
             new OutputContTypeAssoc() {Name="Xbox 360", Type=OutputContType.Xbox360 },
             new OutputContTypeAssoc() {Name="DualShock 4", Type=OutputContType.DualShock4 },
+            new OutputContTypeAssoc() {Name="DualSense Edge", Type=OutputContType.DualSenseEdge },
+            new OutputContTypeAssoc() {Name="Switch Pro Controller 2", Type=OutputContType.SwitchPro2 },
             new OutputContTypeAssoc() {Name="None", Type=OutputContType.None },
         };
         public List<OutputContTypeAssoc> OutputContList => outputContList;
 
-        public string ProfilePathErrors
+        public string ProfileNameErrors
         {
             get
             {
                 string result = string.Empty;
-                if (errors.TryGetValue("ProfilePath", out List<string> errorList))
+                if (errors.TryGetValue("ProfileName", out List<string> errorList))
                 {
                     result = string.Join("\n", errorList);
                 }
@@ -89,19 +112,17 @@ namespace DS4MapperTest.ViewModels
                 return result;
             }
         }
-        public event EventHandler ProfilePathErrorsChanged;
-        public bool HasProfilePathError
+        public bool HasProfileNameError
         {
-            get => errors.ContainsKey("ProfilePath");
+            get => errors.ContainsKey("ProfileName");
         }
-        public event EventHandler HasProfilePathErrorChanged;
 
-        public string CreatorErrors
+        public string ProfileFolderErrors
         {
             get
             {
                 string result = string.Empty;
-                if (errors.TryGetValue("Creator", out List<string> errorList))
+                if (errors.TryGetValue("ProfileFolder", out List<string> errorList))
                 {
                     result = string.Join("\n", errorList);
                 }
@@ -109,13 +130,10 @@ namespace DS4MapperTest.ViewModels
                 return result;
             }
         }
-        public event EventHandler CreatorErrorsChanged;
-        public bool HasCreatorError
+        public bool HasProfileFolderError
         {
-            get => errors.ContainsKey("Creator");
+            get => errors.ContainsKey("ProfileFolder");
         }
-        public event EventHandler HasCreatorErrorChanged;
-
 
         protected Dictionary<string, List<string>> errors =
             new Dictionary<string, List<string>>();
@@ -127,23 +145,29 @@ namespace DS4MapperTest.ViewModels
         {
             this.mapper = mapper;
             this.manager = manager;
+
+            // Profiles are stored per device type (DS4, DualSense, etc.), so the
+            // folder for the currently active controller is always a sensible
+            // default. The manage-profiles panel that hosts this view model can
+            // only be opened while a controller is connected, so DeviceType is
+            // guaranteed to be valid here.
+            profileFolder = mapper.AppGlobal.GetDeviceProfileFolderLocation(mapper.DeviceType);
         }
 
         public bool CreateProfile()
         {
             Profile tempProfile = null;
-            string profileName = string.Empty;
+            string fullPath = ProfilePath;
+            string trimmedName = profileName.Trim();
             ManualResetEventSlim resetEvent = new ManualResetEventSlim(false);
 
             mapper.QueueEvent(() =>
             {
                 mapper.UseBlankProfile();
                 tempProfile = mapper.ActionProfile;
-                profileName = Path.GetFileNameWithoutExtension(profilePath);
-                tempProfile.Name = profileName;
-                tempProfile.Creator = creator;
+                tempProfile.Name = trimmedName;
                 tempProfile.CreationDate = DateTime.UtcNow;
-                tempProfile.Description = profileName;
+                tempProfile.Description = trimmedName;
                 if (outputControllerTypeIdx >= 0)
                 {
                     tempProfile.OutputGamepadSettings.OutputGamepad = OutputContList[outputControllerTypeIdx].Type;
@@ -168,14 +192,14 @@ namespace DS4MapperTest.ViewModels
                 tempProfile.ActionSets[0].Name = "Main";
                 tempProfile.ActionSets[0].ActionLayers[0].Name = "Default";
 
-                mapper.AppGlobal.CreateBlankProfile(profilePath, tempProfile);
+                mapper.AppGlobal.CreateBlankProfile(fullPath, tempProfile);
 
                 resetEvent.Set();
             });
 
             resetEvent.Wait(AppGlobalData.RESET_WAIT_TIMEOUT);
-            manager.DeviceProfileListDict[mapper.DeviceType].CreateProfileItem(profilePath,
-                    profileName,
+            manager.DeviceProfileListDict[mapper.DeviceType].CreateProfileItem(fullPath,
+                    trimmedName,
                     mapper.DeviceType);
 
             profileCreated = true;
@@ -183,67 +207,71 @@ namespace DS4MapperTest.ViewModels
             return profileCreated;
         }
 
-        public bool Validate()
-        {
-            bool result = false;
-            if (profilePath.EndsWith(".json") && !File.Exists(profilePath))
-            {
-                result = true;
-            }
-
-            return result;
-        }
-
         public bool ValidateForm()
         {
-            bool result = false;
-            ClearOldErrors();
+            ValidateNameField();
+            ValidateFolderField();
 
-            if (string.IsNullOrEmpty(profilePath))
+            return errors.Count == 0;
+        }
+
+        // Runs on every keystroke (via the ProfileName setter) as well as on
+        // form submission, so an invalid name is flagged immediately rather
+        // than only once the user presses Create.
+        private void ValidateNameField()
+        {
+            ClearFieldErrors("ProfileName");
+
+            if (string.IsNullOrWhiteSpace(profileName))
             {
-                List<string> tempList;
-                if (!errors.TryGetValue("ProfilePath", out tempList))
-                {
-                    tempList = new List<string>();
-                    errors.Add("ProfilePath", tempList);
-                }
-
-                tempList.Add("Profile Path not provided");
-                ErrorsChanged?.Invoke(this, new DataErrorsChangedEventArgs("ProfilePath"));
+                AddError("ProfileName", "Profile name not provided");
             }
-            else if (!profilePath.EndsWith(".json") || File.Exists(profilePath))
+            else if (profileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             {
-                List<string> tempList;
-                if (!errors.TryGetValue("ProfilePath", out tempList))
-                {
-                    tempList = new List<string>();
-                    errors.Add("ProfilePath", tempList);
-                }
-
-                tempList.Add("Profile Path is invalid");
-                ErrorsChanged?.Invoke(this, new DataErrorsChangedEventArgs("ProfilePath"));
+                AddError("ProfileName", "Profile name contains invalid characters");
+            }
+            else if (File.Exists(ProfilePath))
+            {
+                AddError("ProfileName", "A profile with this name already exists");
             }
 
-            if (string.IsNullOrEmpty(creator))
-            {
-                List<string> tempList;
-                if (!errors.TryGetValue("Creator", out tempList))
-                {
-                    tempList = new List<string>();
-                    errors.Add("Creator", tempList);
-                }
+            RaiseErrorStatusEvents(new List<string> { "ProfileName" });
+        }
 
-                tempList.Add("No creator specified");
-                ErrorsChanged?.Invoke(this, new DataErrorsChangedEventArgs("Creator"));
+        private void ValidateFolderField()
+        {
+            ClearFieldErrors("ProfileFolder");
+
+            if (string.IsNullOrWhiteSpace(profileFolder))
+            {
+                AddError("ProfileFolder", "Profile folder not provided");
+            }
+            else if (!Directory.Exists(profileFolder))
+            {
+                AddError("ProfileFolder", "Profile folder does not exist");
             }
 
-            result = errors.Count == 0;
-            if (!result)
+            RaiseErrorStatusEvents(new List<string> { "ProfileFolder" });
+        }
+
+        private void AddError(string propertyName, string message)
+        {
+            if (!errors.TryGetValue(propertyName, out List<string> tempList))
             {
-                RaiseErrorStatusEvents(errors.Keys.ToList());
+                tempList = new List<string>();
+                errors.Add(propertyName, tempList);
             }
 
-            return result;
+            tempList.Add(message);
+            ErrorsChanged?.Invoke(this, new DataErrorsChangedEventArgs(propertyName));
+        }
+
+        private void ClearFieldErrors(string propertyName)
+        {
+            if (errors.Remove(propertyName))
+            {
+                ErrorsChanged?.Invoke(this, new DataErrorsChangedEventArgs(propertyName));
+            }
         }
 
         public IEnumerable GetErrors(string propertyName)
@@ -271,13 +299,13 @@ namespace DS4MapperTest.ViewModels
             {
                 switch(key)
                 {
-                    case "ProfilePath":
-                        ProfilePathErrorsChanged?.Invoke(this, EventArgs.Empty);
-                        HasProfilePathErrorChanged?.Invoke(this, EventArgs.Empty);
+                    case "ProfileName":
+                        RaisePropertyChanged(nameof(ProfileNameErrors));
+                        RaisePropertyChanged(nameof(HasProfileNameError));
                         break;
-                    case "Creator":
-                        CreatorErrorsChanged?.Invoke(this, EventArgs.Empty);
-                        HasCreatorErrorChanged?.Invoke(this, EventArgs.Empty);
+                    case "ProfileFolder":
+                        RaisePropertyChanged(nameof(ProfileFolderErrors));
+                        RaisePropertyChanged(nameof(HasProfileFolderError));
                         break;
                     default:
                         break;

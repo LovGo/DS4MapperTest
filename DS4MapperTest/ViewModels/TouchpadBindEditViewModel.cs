@@ -78,6 +78,9 @@ namespace DS4MapperTest.ViewModels
                     result = new TouchpadNoAction();
                     break;
                 case 1:
+                    result = new TouchpadPassthruAction();
+                    break;
+                case 2:
                     {
                         TouchpadStickAction tempAction = new TouchpadStickAction();
                         // TODO: Fix
@@ -87,7 +90,7 @@ namespace DS4MapperTest.ViewModels
                     }
 
                     break;
-                case 2:
+                case 3:
                     {
                         TouchpadActionPad tempAction = new TouchpadActionPad();
                         // TODO: Fix
@@ -97,7 +100,7 @@ namespace DS4MapperTest.ViewModels
                     }
 
                     break;
-                case 3:
+                case 4:
                     {
                         TouchpadMouseJoystick tempAction = new TouchpadMouseJoystick();
                         // TODO: Fix
@@ -107,7 +110,7 @@ namespace DS4MapperTest.ViewModels
                     }
 
                     break;
-                case 4:
+                case 5:
                     {
                         TouchpadMouse tempAction = new TouchpadMouse();
                         // TODO: Fix
@@ -117,7 +120,7 @@ namespace DS4MapperTest.ViewModels
                     }
 
                     break;
-                case 5:
+                case 6:
                     {
                         TouchpadCircular tempAction = new TouchpadCircular();
                         // TODO: Fix
@@ -127,7 +130,7 @@ namespace DS4MapperTest.ViewModels
                     }
 
                     break;
-                case 6:
+                case 7:
                     {
                         TouchpadAbsAction tempAction = new TouchpadAbsAction();
                         //var joyDefaults = mapper.DeviceActionDefaults.GrabTouchMouseDefaults();
@@ -136,7 +139,7 @@ namespace DS4MapperTest.ViewModels
                     }
 
                     break;
-                case 7:
+                case 8:
                     {
                         TouchpadDirectionalSwipe tempAction = new TouchpadDirectionalSwipe();
                         var joyDefaults = mapper.DeviceActionDefaults.GetTouchDirectionSwipeActionDefaults();
@@ -145,18 +148,15 @@ namespace DS4MapperTest.ViewModels
                     }
 
                     break;
-                case 8:
-                    {
-                        TouchpadSingleButton tempAction = new TouchpadSingleButton();
-                        //var joyDefaults = mapper.DeviceActionDefaults.GrabTouchCircularActionDefaults();
-                        //joyDefaults.Process(tempAction);
-                        result = tempAction;
-                    }
-
-                    break;
                 case 9:
                     {
                         TouchpadFlickStick tempAction = new TouchpadFlickStick();
+                        // Flick stick uses these values at runtime, so seed a newly selected
+                        // touchpad action from the profile-wide calibration immediately. The
+                        // profile is the source of truth for RWC, in-game sensitivity, and the
+                        // derived counts-per-360 value used by the other calibrated actions.
+                        tempAction.RealWorldCalibration = mapper.ActionProfile.CalibRwc;
+                        tempAction.InGameSens = mapper.ActionProfile.CalibInGameSens;
                         result = tempAction;
                     }
 

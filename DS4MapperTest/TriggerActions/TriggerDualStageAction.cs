@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using DS4MapperTest.AxisModifiers;
 using DS4MapperTest.ButtonActions;
+using DS4MapperTest.MapperUtil;
 
 namespace DS4MapperTest.TriggerActions
 {
@@ -22,6 +23,7 @@ namespace DS4MapperTest.TriggerActions
             public const string HIPFIRE_DELAY = "HipFireDelay";
             public const string ANTIDEAD_ZONE = "AntiDeadZone";
             public const string FORCE_HIP_FIRE_TIME = "ForceHipFireTime";
+            public const string SOFT_PULL_HAPTICS_INTENSITY = "SoftPullHapticsIntensity";
             public const string FULL_PULL_HAPTICS_INTENSITY = "FullPullHapticsIntensity";
             //public const string OUTPUT_TRIGGER = "OutputTrigger";
         }
@@ -37,6 +39,7 @@ namespace DS4MapperTest.TriggerActions
             PropertyKeyStrings.HIPFIRE_DELAY,
             PropertyKeyStrings.ANTIDEAD_ZONE,
             PropertyKeyStrings.FORCE_HIP_FIRE_TIME,
+            PropertyKeyStrings.SOFT_PULL_HAPTICS_INTENSITY,
             PropertyKeyStrings.FULL_PULL_HAPTICS_INTENSITY,
             //PropertyKeyStrings.OUTPUT_TRIGGER,
         };
@@ -67,21 +70,19 @@ namespace DS4MapperTest.TriggerActions
         }
 
         public const string ACTION_TYPE_NAME = "TriggerDualStageAction";
+        public const int DEFAULT_HIPFIRE_DELAY_MS = 100;
 
         private double axisNorm;
         private AxisDeadZone deadMod;
 
-        public bool startCheck;
-        private Stopwatch checkTimeWatch = new Stopwatch();
-        public bool outputActive;
+        private DualStageEvaluatorState stageState = new DualStageEvaluatorState();
         public bool softPullActActive;
         public bool fullPullActActive;
-        public EngageButtonsMode actionStateMode = EngageButtonsMode.Both;
         public ActiveZoneButtons currentActiveButtons = ActiveZoneButtons.None;
         public ActiveZoneButtons previousActiveButtons = ActiveZoneButtons.None;
 
         private DualStageMode triggerStageMode;
-        private int hipFireMs;
+        private int hipFireMs = DEFAULT_HIPFIRE_DELAY_MS;
         private bool fullPullClick;
         private bool forceHipTime;
         public bool ForceHipTime
@@ -132,6 +133,20 @@ namespace DS4MapperTest.TriggerActions
 
         private bool feedbackActive;
         private bool wasFeedbackActive;
+        private bool softPullFeedbackActive;
+        private bool wasSoftPullFeedbackActive;
+        private HapticsIntensity softPullActionHapticsIntensity;
+        private double softPullHapticsIntensityRatio;
+        public HapticsIntensity SoftPullActionHapticsIntensity
+        {
+            get => softPullActionHapticsIntensity;
+            set
+            {
+                softPullActionHapticsIntensity = value;
+                softPullHapticsIntensityRatio = GetHapticsIntensityRatio(value);
+            }
+        }
+
         private HapticsIntensity fullPullActionHapticsIntensity;
         public HapticsIntensity FullPullActionHapticsIntensity
         {
@@ -169,7 +184,9 @@ namespace DS4MapperTest.TriggerActions
                 fullPullClick = axisNorm == 1.0;
             }
 
-            ActiveZoneButtons currentStageBtns = ProcessCurrentStage(axisNorm);
+            ActiveZoneButtons currentStageBtns = DualStageEvaluator.ProcessCurrentStage(
+                triggerStageMode, axisNorm, fullPullClick, forceHipTime, hipFireMs,
+                this.fullPullActActive, stageState);
 
             this.softPullActActive = this.fullPullActActive = false;
 
@@ -204,6 +221,14 @@ namespace DS4MapperTest.TriggerActions
             {
                 softPullActButton.PrepareAnalog(mapper, 0.0, 0.0);
                 softPullActButton.Event(mapper);
+
+                if (softPullFeedbackActive)
+                {
+                    mapper.SetFeedback(mappingId, OFF_HAPTICS_INTENSITY_RATIO);
+                    softPullFeedbackActive = false;
+                }
+
+                wasSoftPullFeedbackActive = false;
             }
 
             bool wasFullPullActive = !fullPullActActive &&
@@ -226,6 +251,18 @@ namespace DS4MapperTest.TriggerActions
             {
                 softPullActButton.PrepareAnalog(mapper, axisNorm, 1.0);
                 if (softPullActButton.active) softPullActButton.Event(mapper);
+
+                if (!wasSoftPullFeedbackActive)
+                {
+                    mapper.SetFeedback(mappingId, softPullHapticsIntensityRatio);
+                    wasSoftPullFeedbackActive = true;
+                    softPullFeedbackActive = true;
+                }
+                else if (softPullFeedbackActive)
+                {
+                    mapper.SetFeedback(mappingId, OFF_HAPTICS_INTENSITY_RATIO);
+                    softPullFeedbackActive = false;
+                }
             }
 
             if (fullPullActActive)
@@ -254,6 +291,13 @@ namespace DS4MapperTest.TriggerActions
             if (softPullActActive)
             {
                 softPullActButton.Release(mapper, resetState, ignoreReleaseActions);
+
+                if (softPullFeedbackActive)
+                {
+                    mapper.SetFeedback(mappingId, OFF_HAPTICS_INTENSITY_RATIO);
+                    softPullFeedbackActive = false;
+                    wasSoftPullFeedbackActive = false;
+                }
             }
 
             if (fullPullActActive)
@@ -272,9 +316,9 @@ namespace DS4MapperTest.TriggerActions
             currentActiveButtons = ActiveZoneButtons.None;
             previousActiveButtons = currentActiveButtons;
             fullPullClick = false;
-            ResetStageState();
+            stageState.ResetStageState();
             feedbackActive = wasFeedbackActive = false;
-            outputActive = false;
+            softPullFeedbackActive = wasSoftPullFeedbackActive = false;
             active = activeEvent = false;
         }
 
@@ -283,6 +327,12 @@ namespace DS4MapperTest.TriggerActions
             if (softPullActActive && !useParentSoftPullBtn)
             {
                 softPullActButton.Release(mapper, resetState);
+
+                if (softPullFeedbackActive)
+                {
+                    mapper.SetFeedback(mappingId, OFF_HAPTICS_INTENSITY_RATIO);
+                    softPullFeedbackActive = false;
+                }
             }
 
             if (fullPullActActive && !useParentFullPullBtn)
@@ -300,9 +350,9 @@ namespace DS4MapperTest.TriggerActions
             currentActiveButtons = ActiveZoneButtons.None;
             previousActiveButtons = currentActiveButtons;
             fullPullClick = false;
-            ResetStageState();
+            stageState.ResetStageState();
             feedbackActive = wasFeedbackActive = false;
-            outputActive = false;
+            softPullFeedbackActive = wasSoftPullFeedbackActive = false;
             active = activeEvent = false;
         }
 
@@ -339,11 +389,13 @@ namespace DS4MapperTest.TriggerActions
                             deadMod.AntiDeadZone = tempDualTrigAction.deadMod.AntiDeadZone;
                             break;
                         case PropertyKeyStrings.SOFTPULL_BUTTON:
-                            softPullActButton = tempDualTrigAction.softPullActButton;
+                            softPullActButton = tempDualTrigAction.softPullActButton != null ?
+                                (AxisDirButton)tempDualTrigAction.softPullActButton.DuplicateAction() : null;
                             useParentSoftPullBtn = true;
                             break;
                         case PropertyKeyStrings.FULLPULL_BUTTON:
-                            fullPullActButton = tempDualTrigAction.fullPullActButton;
+                            fullPullActButton = tempDualTrigAction.fullPullActButton != null ?
+                                (AxisDirButton)tempDualTrigAction.fullPullActButton.DuplicateAction() : null;
                             useParentFullPullBtn = true;
                             break;
                         case PropertyKeyStrings.DUALSTAGE_MODE:
@@ -354,6 +406,9 @@ namespace DS4MapperTest.TriggerActions
                             break;
                         case PropertyKeyStrings.FORCE_HIP_FIRE_TIME:
                             forceHipTime = tempDualTrigAction.forceHipTime;
+                            break;
+                        case PropertyKeyStrings.SOFT_PULL_HAPTICS_INTENSITY:
+                            SoftPullActionHapticsIntensity = tempDualTrigAction.softPullActionHapticsIntensity;
                             break;
                         case PropertyKeyStrings.FULL_PULL_HAPTICS_INTENSITY:
                             FullPullActionHapticsIntensity = tempDualTrigAction.fullPullActionHapticsIntensity;
@@ -368,242 +423,6 @@ namespace DS4MapperTest.TriggerActions
         private void TempDualTrigAction_NotifyPropertyChanged(object sender, NotifyPropertyChangeArgs e)
         {
             CascadePropertyChange(e.Mapper, e.PropertyName);
-        }
-
-        private void StartStageProcessing(bool useTime=true)
-        {
-            startCheck = true;
-            if (useTime)
-            {
-                checkTimeWatch.Restart();
-            }
-
-            outputActive = false;
-            softPullActActive = false;
-            fullPullActActive = false;
-            actionStateMode = EngageButtonsMode.None;
-            //previousActiveButtons = ActiveZoneButtons.None;
-        }
-
-        private void ResetStageState()
-        {
-            startCheck = false;
-            if (checkTimeWatch.IsRunning)
-            {
-                checkTimeWatch.Reset();
-            }
-
-            outputActive = false;
-            softPullActActive = false;
-            fullPullActActive = false;
-            actionStateMode = EngageButtonsMode.None;
-            //previousActiveButtons = ActiveZoneButtons.None;
-        }
-
-        private ActiveZoneButtons ProcessCurrentStage(double axisNorm)
-        {
-            ActiveZoneButtons result = ActiveZoneButtons.None;
-
-            switch (triggerStageMode)
-            {
-                case DualStageMode.Threshold:
-                    {
-                        if (fullPullClick)
-                        {
-                            result = ActiveZoneButtons.SoftPull | ActiveZoneButtons.FullPull;
-                        }
-                        else if (axisNorm != 0.0)
-                        {
-                            result = ActiveZoneButtons.SoftPull; 
-                        }
-                        else
-                        {
-                            result = ActiveZoneButtons.None;
-                        }
-                    }
-
-                    break;
-                case DualStageMode.ExclusiveButtons:
-                    {
-                        if (fullPullClick)
-                        {
-                            actionStateMode = EngageButtonsMode.FullPullOnly;
-                            result = ActiveZoneButtons.FullPull;
-                        }
-                        else if (axisNorm != 0.0 &&
-                            actionStateMode != EngageButtonsMode.FullPullOnly)
-                        {
-                            actionStateMode = EngageButtonsMode.Both;
-                            result = ActiveZoneButtons.SoftPull;
-                        }
-                        else if (axisNorm == 0.0)
-                        {
-                            actionStateMode = EngageButtonsMode.None;
-                            result = ActiveZoneButtons.None;
-                            //outputActive = false;
-                        }
-                    }
-
-                    break;
-                case DualStageMode.HairTrigger:
-                    {
-                        if (fullPullClick)
-                        {
-                            // Full pull now activates both. Soft pull action
-                            // no longer engaged with threshold
-                            result = ActiveZoneButtons.SoftPull | ActiveZoneButtons.FullPull;
-                        }
-                        else if (axisNorm != 0.0 && fullPullActActive)
-                        {
-                            // Full pull not engaged yet. Activate Soft pull action.
-                            result = ActiveZoneButtons.SoftPull;
-                        }
-                        else if (axisNorm == 0.0 && outputActive)
-                        {
-                            ResetStageState();
-                            //outputActive = false;
-                        }
-                    }
-
-                    break;
-                case DualStageMode.HipFire:
-                    {
-                        if (axisNorm != 0.0 && !startCheck)
-                        {
-                            StartStageProcessing();
-                        }
-                        else if (axisNorm != 0.0 && !outputActive)
-                        {
-                            // Consider action active depending on timer
-                            // or whether full pull is achieved
-                            bool nowActive = (!forceHipTime && fullPullClick) ||
-                                checkTimeWatch.ElapsedMilliseconds > hipFireMs;
-
-                            if (nowActive)
-                            {
-                                checkTimeWatch.Stop();
-                                outputActive = nowActive;
-
-                                if (fullPullClick)
-                                {
-                                    actionStateMode = EngageButtonsMode.FullPullOnly;
-                                }
-                                else if (axisNorm != 0.0)
-                                {
-                                    actionStateMode = EngageButtonsMode.Both;
-                                }
-                            }
-                        }
-                        else if (outputActive)
-                        {
-                            if (fullPullClick)
-                            {
-                                result = ActiveZoneButtons.FullPull;
-
-                                if (actionStateMode == EngageButtonsMode.Both)
-                                {
-                                    result = result | ActiveZoneButtons.SoftPull;
-                                }
-                            }
-                            else if (axisNorm != 0.0 &&
-                                actionStateMode == EngageButtonsMode.Both)
-                            {
-                                result = ActiveZoneButtons.SoftPull;
-                            }
-                            else if (axisNorm == 0.0)
-                            {
-                                ResetStageState();
-                            }
-                        }
-                        else if (startCheck)
-                        {
-                            ResetStageState();
-                        }
-                    }
-
-                    break;
-                case DualStageMode.HipFireExclusiveButtons:
-                    {
-                        if (axisNorm == 0.0)
-                        {
-                            if (startCheck)
-                            {
-                                ResetStageState();
-                            }
-
-                            actionStateMode = EngageButtonsMode.None;
-                            result = ActiveZoneButtons.None;
-                        }
-                        else if (axisNorm != 0.0 && !startCheck)
-                        {
-                            actionStateMode = EngageButtonsMode.None;
-
-                            if (!forceHipTime && fullPullClick)
-                            {
-                                StartStageProcessing(false);
-                            }
-                            else if (axisNorm != 0.0)
-                            {
-                                StartStageProcessing();
-                            }
-                        }
-
-                        if (axisNorm != 0.0)
-                        {
-                            if (startCheck && !outputActive)
-                            {
-                                // Consider action active depending on timer
-                                // or whether full pull is achieved
-                                bool nowActive = (!forceHipTime && fullPullClick) ||
-                                    checkTimeWatch.ElapsedMilliseconds > hipFireMs;
-
-                                if (nowActive)
-                                {
-                                    if (checkTimeWatch.IsRunning)
-                                    {
-                                        checkTimeWatch.Stop();
-                                    }
-
-                                    outputActive = nowActive;
-
-                                    if (fullPullClick)
-                                    {
-                                        actionStateMode = EngageButtonsMode.FullPullOnly;
-                                        result = ActiveZoneButtons.FullPull;
-                                    }
-                                    else if (axisNorm != 0.0)
-                                    {
-                                        actionStateMode = EngageButtonsMode.SoftPullOnly;
-                                        result = ActiveZoneButtons.SoftPull;
-                                    }
-                                }
-                            }
-                            else if (startCheck && outputActive)
-                            {
-                                if (fullPullClick &&
-                                    actionStateMode == EngageButtonsMode.FullPullOnly)
-                                {
-                                    result = ActiveZoneButtons.FullPull;
-                                }
-                                else if (axisNorm != 0.0 &&
-                                    actionStateMode == EngageButtonsMode.SoftPullOnly)
-                                {
-                                    result = ActiveZoneButtons.SoftPull;
-                                }
-                            }
-                            //else if (startCheck)
-                            //{
-                            //    ResetStageState();
-                            //}
-                        }
-                    }
-
-                    break;
-                default:
-                    break;
-            }
-
-            return result;
         }
 
         protected override void CascadePropertyChange(Mapper mapper, string propertyName)
@@ -636,11 +455,13 @@ namespace DS4MapperTest.TriggerActions
                     deadMod.AntiDeadZone = tempDualTrigAction.deadMod.AntiDeadZone;
                     break;
                 case PropertyKeyStrings.SOFTPULL_BUTTON:
-                    softPullActButton = tempDualTrigAction.softPullActButton;
+                    softPullActButton = tempDualTrigAction.softPullActButton != null ?
+                        (AxisDirButton)tempDualTrigAction.softPullActButton.DuplicateAction() : null;
                     useParentSoftPullBtn = true;
                     break;
                 case PropertyKeyStrings.FULLPULL_BUTTON:
-                    fullPullActButton = tempDualTrigAction.fullPullActButton;
+                    fullPullActButton = tempDualTrigAction.fullPullActButton != null ?
+                        (AxisDirButton)tempDualTrigAction.fullPullActButton.DuplicateAction() : null;
                     useParentFullPullBtn = true;
                     break;
                 case PropertyKeyStrings.DUALSTAGE_MODE:
@@ -651,6 +472,9 @@ namespace DS4MapperTest.TriggerActions
                     break;
                 case PropertyKeyStrings.FORCE_HIP_FIRE_TIME:
                     forceHipTime = tempDualTrigAction.forceHipTime;
+                    break;
+                case PropertyKeyStrings.SOFT_PULL_HAPTICS_INTENSITY:
+                    SoftPullActionHapticsIntensity = tempDualTrigAction.softPullActionHapticsIntensity;
                     break;
                 case PropertyKeyStrings.FULL_PULL_HAPTICS_INTENSITY:
                     FullPullActionHapticsIntensity = tempDualTrigAction.fullPullActionHapticsIntensity;

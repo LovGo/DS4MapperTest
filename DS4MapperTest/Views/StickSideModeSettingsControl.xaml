@@ -1,0 +1,2341 @@
+<UserControl x:Class="DS4MapperTest.Views.StickSideModeSettingsControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             xmlns:propvm="clr-namespace:DS4MapperTest.ViewModels.StickActionPropViewModels"
+             xmlns:shared="clr-namespace:DS4MapperTest.Views.Shared"
+             xmlns:views="clr-namespace:DS4MapperTest.Views"
+             mc:Ignorable="d"
+             d:DesignHeight="720"
+             d:DesignWidth="860">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <Style x:Key="ModeRowBorder" TargetType="Border" BasedOn="{StaticResource JsmccSettingRowBorder}">
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+
+        <Style x:Key="AngleCalibrationBorder" TargetType="Border" BasedOn="{StaticResource JsmccSettingRowBorder}">
+            <Setter Property="Background" Value="{DynamicResource JsmccBg1Brush}"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+
+        <Style x:Key="ModeRowLabel" TargetType="TextBlock" BasedOn="{StaticResource JsmccLabelText}">
+            <Setter Property="Width" Value="170"/>
+        </Style>
+
+        <Style x:Key="StickControlLabel" TargetType="TextBlock" BasedOn="{StaticResource JsmccLabelText}">
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+
+        <Style x:Key="ModeRowGrid" TargetType="Grid">
+            <Setter Property="Height" Value="Auto"/>
+        </Style>
+
+        <DataTemplate x:Key="CounterMovementReleasePressSection">
+            <Border Style="{StaticResource JsmccSettingRowBorder}" Margin="0,12,0,0">
+                <StackPanel>
+                <TextBlock Text="Counter Movement Release Press" Style="{StaticResource JsmccLabelText}" FontWeight="Bold" Margin="0,0,0,2"/>
+                <TextBlock Text="When a digital stick direction is released, the mapper can generate a short press of the opposite direction."
+                           Style="{StaticResource JsmccMutedText}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,4"/>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="260"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Enable Counter Movement Release Press" Style="{StaticResource JsmccLabelText}"/>
+                        <CheckBox Grid.Column="1" IsChecked="{Binding CounterMovementReleasePressEnabled}" Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <StackPanel IsEnabled="{Binding CounterMovementReleasePressEnabled}"
+                            Visibility="{Binding CounterMovementReleasePressEnabled, Converter={StaticResource BoolToVis}}">
+                    <Border Style="{StaticResource ModeRowBorder}">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="260"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Counter Tap Length Mode" Style="{StaticResource JsmccLabelText}"/>
+                                <ComboBox Grid.Column="1"
+                                          ItemsSource="{Binding TapLengthModeItems}"
+                                          DisplayMemberPath="DisplayName"
+                                          SelectedValuePath="ChoiceValue"
+                                          SelectedValue="{Binding OppositeTapLengthMode}"
+                                          Style="{StaticResource JsmccComboBoxStyle}"
+                                          HorizontalAlignment="Left"
+                                          MinWidth="220"/>
+                            </Grid>
+                            <TextBlock Text="{Binding OppositeTapLengthModeDescription}"
+                                       Style="{StaticResource JsmccMutedText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource ModeRowBorder}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="260"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Counter Tap Length Preset" Style="{StaticResource JsmccLabelText}"/>
+                            <ComboBox Grid.Column="1"
+                                      ItemsSource="{Binding TapLengthPresetItems}"
+                                      DisplayMemberPath="DisplayName"
+                                      SelectedValuePath="ChoiceValue"
+                                      SelectedValue="{Binding TapLengthPreset}"
+                                      Style="{StaticResource JsmccComboBoxStyle}"
+                                      HorizontalAlignment="Left"
+                                      MinWidth="150"
+                                      ToolTip="Custom uses the values below. CS2 sets the fixed duration to 84ms with 7% variance (equivalent to a 78-90ms range) and leaves everything else, including the start delay, unchanged."/>
+                        </Grid>
+                    </Border>
+
+                    <Border Style="{StaticResource ModeRowBorder}"
+                            Visibility="{Binding ShowFixedModeFields, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="260"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Counter Tap Length" Style="{StaticResource JsmccLabelText}"/>
+                                <hc:NumericUpDown Grid.Column="1" Minimum="10" Maximum="150" DecimalPlaces="0" Increment="1"
+                                                  Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                  Value="{Binding OppositeTapLengthMs, UpdateSourceTrigger=LostFocus}"/>
+                                <TextBlock Grid.Column="2" Text="ms" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            </Grid>
+                            <TextBlock Text="Uses the same total duration for every qualifying release."
+                                       Style="{StaticResource JsmccMutedText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource ModeRowBorder}"
+                            Visibility="{Binding ShowWaitVariancePercentageModeFields, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="260"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Counter Tap Length" Style="{StaticResource JsmccLabelText}"/>
+                                <hc:NumericUpDown Grid.Column="1" Minimum="10" Maximum="150" DecimalPlaces="0" Increment="1"
+                                                  Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                  Value="{Binding OppositeTapLengthMs, UpdateSourceTrigger=LostFocus}"/>
+                                <TextBlock Grid.Column="2" Text="ms" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            </Grid>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="260"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Wait Variance Percentage" Style="{StaticResource JsmccLabelText}"/>
+                                <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="100" DecimalPlaces="0" Increment="1"
+                                                  Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                  Value="{Binding OppositeTapLengthVariancePercent, UpdateSourceTrigger=LostFocus}"/>
+                                <TextBlock Grid.Column="2" Text="%" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            </Grid>
+                            <TextBlock Text="Sets the percentage range below and above the fixed tap length. Final boundaries are rounded down to whole milliseconds."
+                                       Style="{StaticResource JsmccMutedText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource ModeRowBorder}"
+                            Visibility="{Binding ShowMinimumAndMaximumModeFields, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <TextBlock Text="Counter Tap Length Variance" Style="{StaticResource JsmccLabelText}" Margin="0,0,0,4"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="170"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="170"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Minimum" Style="{StaticResource JsmccLabelText}"/>
+                                <hc:NumericUpDown Grid.Column="1" Minimum="10" Maximum="150" DecimalPlaces="0" Increment="1"
+                                                  Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                  Value="{Binding OppositeTapLengthMinimumMs, UpdateSourceTrigger=LostFocus}"/>
+                                <TextBlock Grid.Column="2" Text="ms" Style="{StaticResource JsmccLabelText}" Margin="6,0,12,0" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="3" Text="Maximum" Style="{StaticResource JsmccLabelText}"/>
+                                <hc:NumericUpDown Grid.Column="4" Minimum="10" Maximum="150" DecimalPlaces="0" Increment="1"
+                                                  Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                  Value="{Binding OppositeTapLengthMaximumMs, UpdateSourceTrigger=LostFocus}"/>
+                                <TextBlock Grid.Column="5" Text="ms" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            </Grid>
+                            <TextBlock Text="Selects a total duration at random from the specified inclusive range. On each qualifying release, one value is picked at random from this range and used as the complete window for that release."
+                                       Style="{StaticResource JsmccMutedText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Expander Header="Advanced Settings" IsExpanded="False" Margin="0,0,0,6">
+                        <StackPanel Margin="12,8,0,0">
+                            <Border Style="{StaticResource ModeRowBorder}">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="260"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Counter Tap Start Delay Mode" Style="{StaticResource JsmccLabelText}"/>
+                                        <ComboBox Grid.Column="1"
+                                                  ItemsSource="{Binding StartDelayModeItems}"
+                                                  DisplayMemberPath="DisplayName"
+                                                  SelectedValuePath="ChoiceValue"
+                                                  SelectedValue="{Binding OppositeTapStartDelayMode}"
+                                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                                  HorizontalAlignment="Left"
+                                                  MinWidth="220"/>
+                                    </Grid>
+                                    <TextBlock Text="{Binding OppositeTapStartDelayModeDescription}"
+                                               Style="{StaticResource JsmccMutedText}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource ModeRowBorder}"
+                                    Visibility="{Binding ShowStartDelayFixedModeFields, Converter={StaticResource BoolToVis}}">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="260"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Counter Tap Start Delay" Style="{StaticResource JsmccLabelText}"/>
+                                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="150" DecimalPlaces="0" Increment="1"
+                                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                          Value="{Binding OppositeTapStartDelayMs, UpdateSourceTrigger=LostFocus}"/>
+                                        <TextBlock Grid.Column="2" Text="ms" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <TextBlock Text="Sets a fixed neutral delay before the generated opposite press begins."
+                                               Style="{StaticResource JsmccMutedText}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource ModeRowBorder}"
+                                    Visibility="{Binding ShowStartDelayWaitVariancePercentageModeFields, Converter={StaticResource BoolToVis}}">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="260"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Counter Tap Start Delay" Style="{StaticResource JsmccLabelText}"/>
+                                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="150" DecimalPlaces="0" Increment="1"
+                                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                          Value="{Binding OppositeTapStartDelayMs, UpdateSourceTrigger=LostFocus}"/>
+                                        <TextBlock Grid.Column="2" Text="ms" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="260"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Wait Variance Percentage" Style="{StaticResource JsmccLabelText}"/>
+                                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="100" DecimalPlaces="0" Increment="1"
+                                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                          Value="{Binding OppositeTapStartDelayVariancePercent, UpdateSourceTrigger=LostFocus}"/>
+                                        <TextBlock Grid.Column="2" Text="%" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <TextBlock Text="Sets the percentage range below and above the fixed start delay. Final boundaries are rounded down to whole milliseconds."
+                                               Style="{StaticResource JsmccMutedText}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource ModeRowBorder}"
+                                    Visibility="{Binding ShowStartDelayMinimumAndMaximumModeFields, Converter={StaticResource BoolToVis}}">
+                                <StackPanel>
+                                    <TextBlock Text="Counter Tap Start Delay Variance" Style="{StaticResource JsmccLabelText}" Margin="0,0,0,4"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="170"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="170"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Minimum" Style="{StaticResource JsmccLabelText}"/>
+                                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="150" DecimalPlaces="0" Increment="1"
+                                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                          Value="{Binding OppositeTapStartDelayMinimumMs, UpdateSourceTrigger=LostFocus}"/>
+                                        <TextBlock Grid.Column="2" Text="ms" Style="{StaticResource JsmccLabelText}" Margin="6,0,12,0" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="3" Text="Maximum" Style="{StaticResource JsmccLabelText}"/>
+                                        <hc:NumericUpDown Grid.Column="4" Minimum="0" Maximum="150" DecimalPlaces="0" Increment="1"
+                                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                          Value="{Binding OppositeTapStartDelayMaximumMs, UpdateSourceTrigger=LostFocus}"/>
+                                        <TextBlock Grid.Column="5" Text="ms" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <TextBlock Text="Sets the minimum and maximum neutral delay before the generated opposite press begins. The start delay is included within the selected tap-length window above: it is subtracted from the opposite-direction hold time, so the complete action never runs longer than the selected duration."
+                                               Style="{StaticResource JsmccMutedText}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource ModeRowBorder}">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="170"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Minimum Hold Time" Style="{StaticResource JsmccLabelText}"/>
+                                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="300" DecimalPlaces="0" Increment="1"
+                                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                          Value="{Binding CounterMovementMinimumHoldMs, UpdateSourceTrigger=LostFocus}"/>
+                                        <TextBlock Grid.Column="2" Text="ms" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <TextBlock Text="Controls how long a digital direction must stay active before Counter Movement Release Press is eligible."
+                                               Style="{StaticResource JsmccMutedText}"
+                                               TextWrapping="Wrap"
+                                               Margin="170,4,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource ModeRowBorder}">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="170"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Required Stick Deflection" Style="{StaticResource JsmccLabelText}"/>
+                                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="100" DecimalPlaces="0" Increment="1"
+                                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                          Value="{Binding RequiredStickDeflectionThresholdPercent, UpdateSourceTrigger=LostFocus}"/>
+                                        <TextBlock Grid.Column="2" Text="%" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <TextBlock Text="Controls how far the stick must move before Counter Movement Release Press is armed. Set to 0% to arm whenever a digital direction activates."
+                                               Style="{StaticResource JsmccMutedText}"
+                                               TextWrapping="Wrap"
+                                               Margin="170,4,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource ModeRowBorder}">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="260"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Use Arrow Keys for Counter-Movement Presses" Style="{StaticResource JsmccLabelText}" TextWrapping="Wrap"/>
+                                        <CheckBox Grid.Column="1" IsChecked="{Binding UseArrowKeysForCounterMovementPresses}"
+                                                  Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <TextBlock Text="When enabled, generated counter-movement presses use the arrow keys instead of the normal directional binds."
+                                               Style="{StaticResource JsmccMutedText}"
+                                               TextWrapping="Wrap"
+                                               Margin="260,4,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type propvm:StickNoActionPropViewModel}">
+            <TextBlock Text="No additional settings for this mode."
+                       Style="{StaticResource JsmccBodyText}"
+                       TextWrapping="Wrap"/>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type propvm:StickTranslatePropViewModel}">
+            <StackPanel>
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Output Stick" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding OutputStickHolder.OutputStickItems}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedIndex="{Binding OutputStickIndex}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="180"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Dead Zone Type" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding DeadZoneModesChoices}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedValuePath="ChoiceValue"
+                                  SelectedValue="{Binding DeadZoneType}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="150"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Dead Zone" Style="{StaticResource JsmccLabelText}"/>
+                        <TextBox Grid.Column="1" Text="{Binding DeadZone, UpdateSourceTrigger=LostFocus}" Style="{StaticResource JsmccTextBoxStyle}" Width="80"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Anti-Dead Zone" Style="{StaticResource JsmccLabelText}"/>
+                        <TextBox Grid.Column="1" Text="{Binding AntiDeadZone, UpdateSourceTrigger=LostFocus}" Style="{StaticResource JsmccTextBoxStyle}" Width="80"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Max Zone" Style="{StaticResource JsmccLabelText}"/>
+                        <TextBox Grid.Column="1" Text="{Binding MaxZone, UpdateSourceTrigger=LostFocus}" Style="{StaticResource JsmccTextBoxStyle}" Width="80"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Output Curve" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding OutputCurveChoices}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedValuePath="ChoiceValue"
+                                  SelectedValue="{Binding OutputCurve}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="180"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Vertical Scale" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="10" DecimalPlaces="2" Increment="0.05"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding VerticalScale, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Rotation" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="-180" Maximum="180" DecimalPlaces="0" Increment="1"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding Rotation, UpdateSourceTrigger=LostFocus}"
+                                          HorizontalAlignment="Left"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Invert" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding InvertItems}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedValuePath="ChoiceValue"
+                                  SelectedValue="{Binding Invert}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="150"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Max Output" Style="{StaticResource JsmccLabelText}"/>
+                        <CheckBox Grid.Column="1" IsChecked="{Binding MaxOutputEnabled}" Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}"
+                        Visibility="{Binding MaxOutputEnabled, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Max Output Value" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.05"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding MaxOutput, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Square Stick" Style="{StaticResource JsmccLabelText}"/>
+                        <CheckBox Grid.Column="1" IsChecked="{Binding SquareStickEnabled}" Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}"
+                        Visibility="{Binding SquareStickEnabled, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Roundness" Style="{StaticResource JsmccLabelText}"/>
+                        <TextBox Grid.Column="1" Text="{Binding SquareStickRoundness, UpdateSourceTrigger=LostFocus}"
+                                 Width="80" Style="{StaticResource JsmccTextBoxStyle}"/>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type propvm:StickPadActionPropViewModel}">
+            <StackPanel>
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Directional Pad Layout" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding PadModeItems}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedIndex="{Binding SelectedPadModeIndex}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="180"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Dead Zone Type" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding DeadZoneModesChoices}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedValuePath="ChoiceValue"
+                                  SelectedValue="{Binding DeadZoneType}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="150"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Dead Zone" Style="{StaticResource JsmccLabelText}" ToolTip="Used when Split Axes is off."/>
+                            <TextBox Grid.Column="1" Text="{Binding DeadZone, UpdateSourceTrigger=LostFocus}" Width="80" ToolTip="Used when Split Axes is off.">
+                                <TextBox.Style>
+                                    <Style TargetType="TextBox" BasedOn="{StaticResource JsmccTextBoxStyle}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SeparateAxisDeadZones}" Value="True">
+                                                <Setter Property="IsEnabled" Value="False"/>
+                                                <Setter Property="Opacity" Value="0.5"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBox.Style>
+                            </TextBox>
+                        </Grid>
+
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Split Axes" Style="{StaticResource JsmccLabelText}"/>
+                            <CheckBox Grid.Column="1" IsChecked="{Binding SeparateAxisDeadZones}" Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                        </Grid>
+
+                        <Grid Margin="0,6,0,0" Visibility="{Binding SeparateAxisDeadZones, Converter={StaticResource BoolToVis}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Horizontal Dead Zone" Style="{StaticResource JsmccLabelText}"/>
+                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding DeadZoneX, UpdateSourceTrigger=LostFocus}" Style="{StaticResource JsmccTextBoxStyle}" Width="80"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,6,0,0" Text="Vertical Dead Zone" Style="{StaticResource JsmccLabelText}"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" Text="{Binding DeadZoneY, UpdateSourceTrigger=LostFocus}" Style="{StaticResource JsmccTextBoxStyle}" Width="80"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}" Visibility="{Binding ShowDiagonalZoneWidth, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Diagonal Range" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="90" DecimalPlaces="0" Increment="1"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding DiagonalRange, UpdateSourceTrigger=LostFocus}"
+                                          HorizontalAlignment="Left"/>
+                    </Grid>
+                    <TextBlock Text="Controls the angle assigned to each diagonal zone. Lower values favour cardinal directions; higher values make diagonals easier to enter."
+                               Style="{StaticResource JsmccMutedText}"
+                               TextWrapping="Wrap"
+                               Margin="170,6,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Rotation" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="-180" Maximum="180" DecimalPlaces="0" Increment="1"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding Rotation, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Binding Presets" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding ActionPresetChoicesItems}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedValuePath="ChoiceValue"
+                                  SelectedValue="{Binding ActionPresetChoice}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="150"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                            <TextBlock Text="Directional Binds"
+                                       Style="{StaticResource JsmccLabelText}"/>
+                            <TextBlock Text="Quick bind"
+                                       Style="{StaticResource JsmccMutedText}"
+                                       Margin="0,3,0,0"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1">
+                            <ItemsControl ItemsSource="{Binding CardinalDirectionItems}"
+                                          Visibility="{Binding ShowCardinalPad, Converter={StaticResource BoolToVis}}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ModeRowBorder}">
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="120"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                                    <TextBlock Text="{Binding DisplayName}"
+                                                               Style="{StaticResource JsmccLabelText}"/>
+                                                    <TextBlock Text="{Binding Subtitle}"
+                                                               Style="{StaticResource JsmccMutedText}"
+                                                               Margin="0,3,0,0"/>
+                                                </StackPanel>
+                                                <views:ActionOutputListControl Grid.Column="1"
+                                                                               Grid.ColumnSpan="2"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <ItemsControl ItemsSource="{Binding DiagonalDirectionItems}"
+                                          Visibility="{Binding ShowDiagonalPad, Converter={StaticResource BoolToVis}}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ModeRowBorder}">
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="120"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                                    <TextBlock Text="{Binding DisplayName}"
+                                                               Style="{StaticResource JsmccLabelText}"/>
+                                                    <TextBlock Text="{Binding Subtitle}"
+                                                               Style="{StaticResource JsmccMutedText}"
+                                                               Margin="0,3,0,0"/>
+                                                </StackPanel>
+                                                <views:ActionOutputListControl Grid.Column="1"
+                                                                               Grid.ColumnSpan="2"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <ContentControl Content="{Binding}" ContentTemplate="{StaticResource CounterMovementReleasePressSection}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type propvm:StickMousePropViewModel}">
+            <StackPanel>
+                <shared:CalibrationModeControl Margin="0,0,0,6"/>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Joystick Mouse Sensitivity" Style="{StaticResource JsmccLabelText}"
+                                   ToolTip="Sets the camera rotation speed at full stick deflection. Angle calibration keeps the speed consistent across games and in-game sensitivities."/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <hc:NumericUpDown Minimum="0" Maximum="7200" DecimalPlaces="1" Increment="10"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding DegreesPerSecond, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Text="&#176;/s" Style="{StaticResource JsmccMutedText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <RadioButton Grid.Row="0" Grid.Column="0"
+                                     IsChecked="{Binding VerticalScaleIsMultiplierMode, Mode=TwoWay}"
+                                     VerticalAlignment="Center" Content="Vertical Scale"
+                                     Foreground="{DynamicResource JsmccTextMidBrush}">
+                            <RadioButton.Style>
+                                <Style TargetType="RadioButton">
+                                    <Setter Property="Opacity" Value="1.0"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding VerticalScaleIsMultiplierMode}" Value="False">
+                                            <Setter Property="Opacity" Value="0.5"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </RadioButton.Style>
+                        </RadioButton>
+                        <hc:NumericUpDown Grid.Row="0" Grid.Column="1" Minimum="0.0" Maximum="10.0" DecimalPlaces="4" Increment="0.1"
+                                          Width="90" HorizontalAlignment="Left" IsEnabled="{Binding VerticalScaleIsMultiplierMode}"
+                                          ValueFormat="0.0###"
+                                          Value="{Binding VerticalScale, UpdateSourceTrigger=LostFocus}">
+                            <hc:NumericUpDown.Style>
+                                <Style TargetType="hc:NumericUpDown" BasedOn="{StaticResource JsmccNumericUpDownStyle}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding VerticalScaleIsMultiplierMode}" Value="False">
+                                            <Setter Property="Opacity" Value="0.5"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </hc:NumericUpDown.Style>
+                        </hc:NumericUpDown>
+
+                        <RadioButton Grid.Row="1" Grid.Column="0" Margin="0,6,0,0"
+                                     IsChecked="{Binding VerticalScaleIsAbsoluteMode, Mode=TwoWay}"
+                                     VerticalAlignment="Center" Content="Vertical Sensitivity"
+                                     Foreground="{DynamicResource JsmccTextMidBrush}">
+                            <RadioButton.Style>
+                                <Style TargetType="RadioButton">
+                                    <Setter Property="Opacity" Value="1.0"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding VerticalScaleIsAbsoluteMode}" Value="False">
+                                            <Setter Property="Opacity" Value="0.5"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </RadioButton.Style>
+                        </RadioButton>
+                        <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" Orientation="Horizontal">
+                            <hc:NumericUpDown Minimum="0" Maximum="7200" DecimalPlaces="1" Increment="10"
+                                              Width="90" IsEnabled="{Binding VerticalScaleIsAbsoluteMode}"
+                                              Value="{Binding VerticalDegreesPerSecond, UpdateSourceTrigger=LostFocus}">
+                                <hc:NumericUpDown.Style>
+                                    <Style TargetType="hc:NumericUpDown" BasedOn="{StaticResource JsmccNumericUpDownStyle}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding VerticalScaleIsAbsoluteMode}" Value="False">
+                                                <Setter Property="Opacity" Value="0.5"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </hc:NumericUpDown.Style>
+                            </hc:NumericUpDown>
+                            <TextBlock Text="&#176;/s" Style="{StaticResource JsmccMutedText}" Margin="6,6,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Dead Zone" Style="{StaticResource JsmccLabelText}" ToolTip="Used when Split Axes is off."/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.02"
+                                              Width="90" Value="{Binding DeadZone, UpdateSourceTrigger=LostFocus}">
+                                <hc:NumericUpDown.Style>
+                                    <Style TargetType="hc:NumericUpDown" BasedOn="{StaticResource JsmccNumericUpDownStyle}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SeparateAxisDeadZones}" Value="True">
+                                                <Setter Property="IsEnabled" Value="False"/>
+                                                <Setter Property="Opacity" Value="0.5"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </hc:NumericUpDown.Style>
+                            </hc:NumericUpDown>
+                        </Grid>
+
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Split Axes" Style="{StaticResource JsmccLabelText}"/>
+                            <CheckBox Grid.Column="1" IsChecked="{Binding SeparateAxisDeadZones}" Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                        </Grid>
+
+                        <Grid Margin="0,6,0,0" Visibility="{Binding SeparateAxisDeadZones, Converter={StaticResource BoolToVis}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Horizontal Dead Zone" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.02"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding DeadZoneX, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,6,0,0" Text="Vertical Dead Zone" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.02"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding DeadZoneY, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Diagonal Range" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="90" DecimalPlaces="0" Increment="1"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding DiagonalRange, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Output Curve" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding OutputCurveChoiceItems}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedValuePath="ChoiceValue"
+                                  SelectedValue="{Binding OutputCurveChoice}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="180"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Delta Acceleration" Style="{StaticResource JsmccLabelText}"/>
+                            <CheckBox Grid.Column="1" IsChecked="{Binding DeltaEnabled}" Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                        </Grid>
+                        <TextBlock Text="Speeds up mouse output as the stick moves farther from centre."
+                                   Style="{StaticResource JsmccBodyText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Visibility="{Binding DeltaEnabled, Converter={StaticResource BoolToVis}}">
+                    <Border Style="{StaticResource ModeRowBorder}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Multiplier" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="20" DecimalPlaces="2" Increment="0.1"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding DeltaMultiplier, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Grid.Column="2" Text="Min Factor" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="3" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.05"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding DeltaMinFactor, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                    </Border>
+
+                    <Border Style="{StaticResource ModeRowBorder}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Min Travel" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.02"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding DeltaMinTravel, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Grid.Column="2" Text="Max Travel" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="3" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.02"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding DeltaMaxTravel, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                    </Border>
+
+                    <Border Style="{StaticResource ModeRowBorder}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Easing Duration" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="5000" DecimalPlaces="0" Increment="10"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding DeltaEasingDuration, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
+                <Border Style="{StaticResource ModeRowBorder}" Margin="0,12,0,0">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                            <TextBlock Text="Multiplier Compensation" Style="{StaticResource JsmccLabelText}" FontWeight="Bold" VerticalAlignment="Center"/>
+                            <CheckBox Style="{StaticResource JsmccToggleStyle}" IsChecked="{Binding MultiplierCompensation}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                        </StackPanel>
+                        <TextBlock Text="Divides your output by this amount to compensate for a third-party acceleration or multiplier tool. Enter the exact multiplier that tool applies to your mouse input."
+                                   Style="{StaticResource JsmccMutedText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,4"/>
+
+                        <StackPanel IsEnabled="{Binding MultiplierCompensation}">
+                            <Border Style="{StaticResource ModeRowBorder}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="190"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Horizontal Multiplier" Style="{StaticResource JsmccLabelText}"/>
+                                    <hc:NumericUpDown Grid.Column="1" Minimum="0.01" Maximum="100.0" DecimalPlaces="3" Increment="0.01"
+                                                      Width="110" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                      Value="{Binding AccelerationMultiplier}"/>
+                                </Grid>
+                            </Border>
+
+                            <Border Style="{StaticResource ModeRowBorder}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <StackPanel.Style>
+                                            <Style TargetType="StackPanel">
+                                                <Setter Property="Opacity" Value="1.0"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding VerticalAccelerationIsAbsoluteMode}" Value="False">
+                                                        <Setter Property="Opacity" Value="0.5"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </StackPanel.Style>
+                                        <RadioButton GroupName="VerticalAccelerationMode"
+                                                     IsChecked="{Binding VerticalAccelerationIsAbsoluteMode, Mode=TwoWay}"
+                                                     VerticalAlignment="Center" Width="190" Content="Vertical Multiplier"
+                                                     Foreground="{DynamicResource JsmccTextMidBrush}"/>
+                                        <hc:NumericUpDown Minimum="0.01" Maximum="100.0" DecimalPlaces="3" Increment="0.01"
+                                                          Width="110" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                          IsEnabled="{Binding VerticalAccelerationIsAbsoluteMode}"
+                                                          Value="{Binding VerticalAccelerationMultiplier}"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                        <StackPanel.Style>
+                                            <Style TargetType="StackPanel">
+                                                <Setter Property="Opacity" Value="1.0"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding VerticalAccelerationIsScaleMode}" Value="False">
+                                                        <Setter Property="Opacity" Value="0.5"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </StackPanel.Style>
+                                        <RadioButton GroupName="VerticalAccelerationMode"
+                                                     IsChecked="{Binding VerticalAccelerationIsScaleMode, Mode=TwoWay}"
+                                                     VerticalAlignment="Center" Width="190" Content="Vertical Scale"
+                                                     Foreground="{DynamicResource JsmccTextMidBrush}"/>
+                                        <hc:NumericUpDown Minimum="0.01" Maximum="100.0" DecimalPlaces="3" Increment="0.01"
+                                                          Width="110" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                          IsEnabled="{Binding VerticalAccelerationIsScaleMode}"
+                                                          Value="{Binding VerticalAccelerationScale}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                            <TextBlock Text="Directional Binds"
+                                       Style="{StaticResource JsmccLabelText}"/>
+                            <TextBlock Text="Quick bind"
+                                       Style="{StaticResource JsmccMutedText}"
+                                       Margin="0,3,0,0"/>
+                        </StackPanel>
+                        <ItemsControl Grid.Column="1"
+                                      ItemsSource="{Binding CardinalDirectionItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource ModeRowBorder}">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="120"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Style="{StaticResource JsmccLabelText}"/>
+                                                <TextBlock Text="{Binding Subtitle}"
+                                                           Style="{StaticResource JsmccMutedText}"
+                                                           Margin="0,3,0,0"/>
+                                            </StackPanel>
+                                            <views:ActionOutputListControl Grid.Column="1"
+                                                                           Grid.ColumnSpan="2"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type propvm:StickCircularPropViewModel}">
+            <StackPanel>
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Sensitivity" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="10" DecimalPlaces="2" Increment="0.1"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding Sensitivity, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Rumble Haptics" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding HapticsIntensityItems}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedValuePath="ChoiceValue"
+                                  SelectedValue="{Binding HapticsChoice}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="150"/>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type propvm:StickAbsMousePropViewModel}">
+            <StackPanel>
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Dead Zone" Style="{StaticResource JsmccLabelText}"/>
+                        <TextBox Grid.Column="1" Text="{Binding DeadZone, UpdateSourceTrigger=LostFocus}" Style="{StaticResource JsmccTextBoxStyle}" Width="80"/>
+                        <TextBlock Grid.Column="2" Text="Max Zone" Style="{StaticResource JsmccLabelText}"/>
+                        <TextBox Grid.Column="3" Text="{Binding MaxZone, UpdateSourceTrigger=LostFocus}" Style="{StaticResource JsmccTextBoxStyle}" Width="80"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Anti-Release Radius" Style="{StaticResource JsmccLabelText}"/>
+                        <TextBox Grid.Column="1" Text="{Binding AntiRelease, UpdateSourceTrigger=LostFocus}" Style="{StaticResource JsmccTextBoxStyle}" Width="80"/>
+                        <TextBlock Grid.Column="2" Text="Snap to Centre on Release" Style="{StaticResource JsmccLabelText}"/>
+                        <CheckBox Grid.Column="3" IsChecked="{Binding SnapToCenterRelease}" Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Use Ring Binding" Style="{StaticResource JsmccLabelText}"/>
+                        <CheckBox Grid.Column="1" IsChecked="{Binding UseOuterRing}" Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" Text="Invert Ring (Inner)" Style="{StaticResource JsmccLabelText}"/>
+                        <CheckBox Grid.Column="3" IsChecked="{Binding OuterRingInvert}" Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Ring Dead Zone" Style="{StaticResource JsmccLabelText}"/>
+                        <TextBox Grid.Column="1" Text="{Binding OuterRingDeadZone, UpdateSourceTrigger=LostFocus}" Style="{StaticResource JsmccTextBoxStyle}" Width="80"/>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type propvm:StickFlickStickPropViewModel}">
+            <StackPanel>
+                <shared:CalibrationModeControl Margin="0,0,0,6"/>
+
+                <StackPanel Margin="0,6,0,6">
+                    <TextBlock Text="Flick Stick" Style="{StaticResource JsmccSectionTitle}"/>
+                    <TextBlock Text="Configure the flick, sweep rotation, and optional sensitivity compensation for this stick."
+                               Style="{StaticResource JsmccBodyText}"
+                               TextWrapping="Wrap"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+
+                <Border Style="{StaticResource JsmccCardBorder}">
+                    <StackPanel>
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Flick Mode" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1" SelectedIndex="{Binding SelectedSubModeIndex}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="180">
+                            <ComboBoxItem>Standard</ComboBoxItem>
+                            <ComboBoxItem>Flick Only</ComboBoxItem>
+                            <ComboBoxItem>Rotate Only</ComboBoxItem>
+                        </ComboBox>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Flick Threshold" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.05"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding FlickThreshold, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}"
+                        Visibility="{Binding ShowFlickSettings, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Flick Time" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="10" Maximum="1000" DecimalPlaces="0" Increment="10"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding FlickTime, UpdateSourceTrigger=LostFocus}"/>
+                        <TextBlock Grid.Column="2" Text="ms" Style="{StaticResource JsmccMutedText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}"
+                        Visibility="{Binding ShowFlickSettings, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Flick Time Exponent" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.05"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding FlickTimeExponent, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <TextBlock Text="Flick Time is always the duration of a 180ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° flick. At 0, every angle uses it; at 1, smaller flicks take proportionally less time."
+                                   Style="{StaticResource JsmccMutedText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}"
+                        Visibility="{Binding ShowFlickSettings, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Snap Angle" Style="{StaticResource JsmccLabelText}"/>
+                            <ComboBox Grid.Column="1" SelectedIndex="{Binding SelectedSnapAngleIndex}"
+                                      Style="{StaticResource JsmccComboBoxStyle}"
+                                      HorizontalAlignment="Left"
+                                      MinWidth="180">
+                                <ComboBoxItem>Off</ComboBoxItem>
+                                <ComboBoxItem>90&#176; (4 directions)</ComboBoxItem>
+                                <ComboBoxItem>45&#176; (8 directions)</ComboBoxItem>
+                            </ComboBox>
+                        </Grid>
+                        <Grid Margin="0,6,0,0" IsEnabled="{Binding SnapEnabled}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Snap Strength" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.05"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding SnapStrength, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <TextBlock Text="Snaps each new flick to the nearest of a fixed set of directions. Strength 1 snaps fully, 0 leaves the flick untouched, and values between bias towards the nearest direction. Sweeping a held stick is never snapped."
+                                   Style="{StaticResource JsmccMutedText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}"
+                        Visibility="{Binding ShowFlickSettings, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Front Angle Deadzone" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="180" DecimalPlaces="0" Increment="1"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding FrontAngleDeadzone, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Grid.Column="2" Text="&#176;" Style="{StaticResource JsmccMutedText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
+                        <TextBlock Text="Cancels the initial flick-turn when it lands within this many degrees of forward, so you can push the stick up and start sweeping without an unwanted camera turn first. Does not affect the sweep itself."
+                                   Style="{StaticResource JsmccMutedText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}"
+                        Visibility="{Binding ShowRotationSettings, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Release Dampening" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="10" DecimalPlaces="2" Increment="0.1"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding ReleaseDampeningSpeed, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}"
+                        Visibility="{Binding ShowRotationSettings, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Sweep Sensitivity" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="6" DecimalPlaces="4" Increment="0.1"
+                                              ValueFormat="0.0###"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding SweepSensitivity, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Grid.Column="2" Text="x" Style="{StaticResource JsmccMutedText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
+                        <TextBlock Text="Multiplier applied to the continuous sweep rotation as you rotate the stick around its outer edge. It does not affect the initial flick-turn. 1x is a natural 1:1 ratio; 0x disables sweeping."
+                                   Style="{StaticResource JsmccMutedText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}"
+                        Visibility="{Binding ShowRotationSettings, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Sweep Rotation Smoothing" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="-1" Maximum="1" DecimalPlaces="2" Increment="0.01"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding RotateSmoothOverride, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <TextBlock Text="-1 uses automatic smoothing; 0 turns it off. Positive values override the small-angle threshold."
+                                   Style="{StaticResource JsmccMutedText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Multiplier Compensation" Style="{StaticResource JsmccLabelText}"/>
+                            <CheckBox Grid.Column="1" IsChecked="{Binding MultiplierCompensation}"
+                                      Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                        </Grid>
+
+                        <TextBlock Text="Divides out an in-game sensitivity multiplier so flick angles stay accurate."
+                                   Style="{StaticResource JsmccMutedText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,4,0,0"/>
+
+                        <Grid Margin="0,6,0,0" IsEnabled="{Binding MultiplierCompensation}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Acceleration Multiplier" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="0.01" Maximum="100" DecimalPlaces="3" Increment="0.01"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding AccelerationMultiplier, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type propvm:StickHybridAimPropViewModel}">
+            <StackPanel>
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Dead Zone" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.02"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding DeadZone, UpdateSourceTrigger=LostFocus}"/>
+                        <TextBlock Grid.Column="2" Text="Max Zone" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="3" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.02"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding MaxZone, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Stick Sensitivity" Style="{StaticResource JsmccLabelText}"
+                                   ToolTip="Deflection-proportional turn rate (the classic aim-stick component)."/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="10000" DecimalPlaces="0" Increment="500"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding StickSens, UpdateSourceTrigger=LostFocus}"/>
+                        <TextBlock Grid.Column="2" Text="Mouselike Factor" Style="{StaticResource JsmccLabelText}"
+                                   ToolTip="Scales the stick's own frame-to-frame movement directly into mouse movement, like a tiny touchpad."/>
+                        <hc:NumericUpDown Grid.Column="3" Minimum="0" Maximum="10000" DecimalPlaces="0" Increment="100"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding MouselikeFactor, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Output Curve" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding OutputCurveChoiceItems}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedValuePath="ChoiceValue"
+                                  SelectedValue="{Binding OutputCurveChoice}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="180"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Edge Push" Style="{StaticResource JsmccLabelText}"
+                                   ToolTip="Keeps mouselike motion going smoothly while the stick is held pinned at the outer edge."/>
+                        <CheckBox Grid.Column="1" IsChecked="{Binding EdgePushEnabled}" Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Return Deadzone" Style="{StaticResource JsmccLabelText}"
+                                       ToolTip="Damps output while the stick is snapping back toward center, so releasing doesn't cause a spurious flick."/>
+                            <CheckBox Grid.Column="1" IsChecked="{Binding ReturnDeadzoneEnabled}"
+                                      Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                        </Grid>
+
+                        <Grid Margin="0,6,0,0" Visibility="{Binding ReturnDeadzoneEnabled, Converter={StaticResource BoolToVis}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Deadzone Angle" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="180" DecimalPlaces="1" Increment="1"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding ReturnDeadzoneAngle, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Grid.Column="2" Text="Cutoff Angle" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="3" Minimum="0" Maximum="180" DecimalPlaces="1" Increment="1"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding ReturnDeadzoneCutoffAngle, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Text="Combines aim-stick turn rate near center with mouse-drag-like motion at the stick's edge."
+                           Style="{StaticResource JsmccMutedText}"
+                           TextWrapping="Wrap"
+                           Margin="0,4,0,0"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type propvm:StickMouseRingPropViewModel}">
+            <StackPanel>
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Dead Zone" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.02"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding DeadZone, UpdateSourceTrigger=LostFocus}"/>
+                        <TextBlock Grid.Column="2" Text="Max Zone" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="3" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.02"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding MaxZone, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Ring Radius" Style="{StaticResource JsmccLabelText}"
+                                   ToolTip="Fraction of the screen the cursor ring extends to from center."/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="1" DecimalPlaces="2" Increment="0.01"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding RingRadius, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                </Border>
+
+                <TextBlock Text="Stick angle places the cursor on a fixed ring around screen center. Releasing the stick leaves the cursor in place."
+                           Style="{StaticResource JsmccMutedText}"
+                           TextWrapping="Wrap"
+                           Margin="0,4,0,0"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type propvm:StickAnalogEmulationPropViewModel}">
+            <StackPanel>
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Directional Pad Layout" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding PadModeItems}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedIndex="{Binding SelectedPadModeIndex}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="180"/>
+                    </Grid>
+                </Border>
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Dead Zone Type" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding DeadZoneModesChoices}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedValuePath="ChoiceValue"
+                                  SelectedValue="{Binding DeadZoneType}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="150"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Dead Zone" Style="{StaticResource JsmccLabelText}" ToolTip="Used when Split Axes is off."/>
+                        <TextBox Grid.Column="1" Text="{Binding DeadZone, UpdateSourceTrigger=LostFocus}" Width="80" ToolTip="Used when Split Axes is off.">
+                            <TextBox.Style>
+                                <Style TargetType="TextBox" BasedOn="{StaticResource JsmccTextBoxStyle}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SeparateAxisDeadZones}" Value="True">
+                                            <Setter Property="IsEnabled" Value="False"/>
+                                            <Setter Property="Opacity" Value="0.5"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBox.Style>
+                        </TextBox>
+                        <TextBlock Grid.Column="2" Text="Split Axes" Style="{StaticResource JsmccLabelText}"/>
+                        <CheckBox Grid.Column="3" IsChecked="{Binding SeparateAxisDeadZones}" Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}" Visibility="{Binding SeparateAxisDeadZones, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Horizontal Dead Zone" Style="{StaticResource JsmccLabelText}"/>
+                        <TextBox Grid.Column="1" Text="{Binding DeadZoneX, UpdateSourceTrigger=LostFocus}" Style="{StaticResource JsmccTextBoxStyle}" Width="80"/>
+                        <TextBlock Grid.Column="2" Text="Vertical Dead Zone" Style="{StaticResource JsmccLabelText}"/>
+                        <TextBox Grid.Column="3" Text="{Binding DeadZoneY, UpdateSourceTrigger=LostFocus}" Style="{StaticResource JsmccTextBoxStyle}" Width="80"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Rotation" Style="{StaticResource JsmccLabelText}"/>
+                        <hc:NumericUpDown Grid.Column="1" Minimum="-180" Maximum="180" DecimalPlaces="0" Increment="1"
+                                          Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                          Value="{Binding Rotation, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Binding Presets" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding ActionPresetChoicesItems}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedValuePath="ChoiceValue"
+                                  SelectedValue="{Binding ActionPresetChoice}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="150"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                            <TextBlock Text="Directional Binds"
+                                       Style="{StaticResource JsmccLabelText}"/>
+                            <TextBlock Text="Quick bind"
+                                       Style="{StaticResource JsmccMutedText}"
+                                       Margin="0,3,0,0"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1">
+                            <ItemsControl ItemsSource="{Binding CardinalDirectionItems}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ModeRowBorder}">
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="120"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                                    <TextBlock Text="{Binding DisplayName}"
+                                                               Style="{StaticResource JsmccLabelText}"/>
+                                                    <TextBlock Text="{Binding Subtitle}"
+                                                               Style="{StaticResource JsmccMutedText}"
+                                                               Margin="0,3,0,0"/>
+                                                </StackPanel>
+                                                <views:ActionOutputListControl Grid.Column="1"
+                                                                               Grid.ColumnSpan="2"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <TextBlock Text="Direction" Style="{StaticResource JsmccCardTitle}" Margin="0,0,0,8"/>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Direction Resolution" Style="{StaticResource JsmccLabelText}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding DirectionResolutionItems}"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectedValuePath="ChoiceValue"
+                                  SelectedValue="{Binding DirectionResolution}"
+                                  Style="{StaticResource JsmccComboBoxStyle}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="180"/>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Direction Pulse Time" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="1" Maximum="1000" DecimalPlaces="0" Increment="1"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding DirectionPulseTimeMs, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Grid.Column="2" Text="ms" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
+                        <TextBlock Text="Length of one complete secondary-direction-key pulse cycle."
+                                   Style="{StaticResource JsmccMutedText}"
+                                   TextWrapping="Wrap"
+                                   Margin="170,6,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <StackPanel IsEnabled="{Binding IsEightWayDirectionResolution}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Diagonal Range" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="90" DecimalPlaces="0" Increment="1"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding DiagonalZoneWidth, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <TextBlock Text="Controls the angle assigned to each diagonal zone in 8 Directions. It is not used by 16, 32, or Continuous Direction."
+                                   Style="{StaticResource JsmccMutedText}"
+                                   TextWrapping="Wrap"
+                                   Margin="170,6,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Text="Speed" Style="{StaticResource JsmccCardTitle}" Margin="0,14,0,8"/>
+
+                <Border Style="{StaticResource ModeRowBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Analog Speed Emulation" Style="{StaticResource JsmccLabelText}"/>
+                        <CheckBox Grid.Column="1" IsChecked="{Binding AnalogSpeedEmulationEnabled}" Style="{StaticResource JsmccToggleStyle}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <StackPanel Visibility="{Binding AnalogSpeedEmulationEnabled, Converter={StaticResource BoolToVis}}">
+                    <Border Style="{StaticResource ModeRowBorder}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Analog Emulation Active %" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="0" Maximum="100" DecimalPlaces="0" Increment="1"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding AnalogEmulationActivePercent, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Grid.Column="2" Text="%" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Text="Lowest non-zero percentage of each speed pulse cycle spent moving."
+                               Style="{StaticResource JsmccMutedText}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,4"/>
+
+                    <Border Style="{StaticResource ModeRowBorder}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Analog Emulation Pulse Time" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="1" Maximum="1000" DecimalPlaces="0" Increment="1"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding AnalogEmulationPulseTimeMs, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Grid.Column="2" Text="ms" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Text="Length of one complete movement and neutral pulse cycle."
+                               Style="{StaticResource JsmccMutedText}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,4"/>
+
+                    <Border Style="{StaticResource ModeRowBorder}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Full-Speed Threshold" Style="{StaticResource JsmccLabelText}"/>
+                            <hc:NumericUpDown Grid.Column="1" Minimum="1" Maximum="100" DecimalPlaces="0" Increment="1"
+                                              Width="90" Style="{StaticResource JsmccNumericUpDownStyle}"
+                                              Value="{Binding FullSpeedThresholdPercent, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Grid.Column="2" Text="%" Style="{StaticResource JsmccLabelText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Text="Stick distance at which speed pulsing stops and movement remains fully active."
+                               Style="{StaticResource JsmccMutedText}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,4"/>
+                </StackPanel>
+
+                <ContentControl Content="{Binding}" ContentTemplate="{StaticResource CounterMovementReleasePressSection}"/>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <StackPanel Margin="0,0,0,6">
+            <TextBlock Text="{Binding SideLabel}" Style="{StaticResource JsmccSectionTitle}"/>
+            <TextBlock Text="Choose the stick mode and configure its analog behaviour."
+                       Style="{StaticResource JsmccBodyText}"
+                       TextWrapping="Wrap"
+                       Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <Border Style="{StaticResource JsmccCardBorder}">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Stick Mode" Style="{StaticResource JsmccLabelText}" Width="120" VerticalAlignment="Center"/>
+                    <ComboBox ItemsSource="{Binding ModeItems}"
+                              DisplayMemberPath="DisplayName"
+                              SelectedValuePath="Index"
+                              SelectedValue="{Binding SelectedModeIndex}"
+                              Style="{StaticResource JsmccComboBoxStyle}"
+                              MinWidth="180"
+                              Margin="8,0,0,0"/>
+                </StackPanel>
+
+                <TextBlock Text="{Binding CurrentModeDescription}"
+                           Style="{StaticResource JsmccBodyText}"
+                           TextWrapping="Wrap"
+                           Margin="0,8,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource JsmccCardBorder}" Margin="0,8,0,18">
+            <StackPanel>
+                <ContentControl Content="{Binding SettingsViewModel}"/>
+
+                <ItemsControl ItemsSource="{Binding ExtraBindings}"
+                              Visibility="{Binding HasExtraBindings, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource JsmccCardBorder}" Margin="0,12,0,0">
+                                <DockPanel LastChildFill="True">
+                                    <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,2">
+                                        <StackPanel DockPanel.Dock="Left">
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       Style="{StaticResource JsmccCardTitle}"/>
+                                            <TextBlock Text="Stick mode binding"
+                                                       Style="{StaticResource JsmccMutedText}"
+                                                       Margin="0,3,0,0"/>
+                                        </StackPanel>
+
+                                        <Button DockPanel.Dock="Right"
+                                                Content="+ Add Extra Command"
+                                                Click="ExtraAddExtraBindingButton_Click"
+                                                Style="{StaticResource JsmccButtonStyle}">
+                                            <Button.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="Hold Press"
+                                                              Tag="Hold"
+                                                              IsEnabled="{Binding PlacementTarget.DataContext.CanAddHoldPress, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              Click="ExtraAddExtraBindingMenuItem_Click"/>
+                                                    <MenuItem Header="Double Press"
+                                                              Tag="Double"
+                                                              IsEnabled="{Binding PlacementTarget.DataContext.CanAddDoublePress, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              Click="ExtraAddExtraBindingMenuItem_Click"/>
+                                                    <MenuItem Header="Chorded Press"
+                                                              Tag="Chorded"
+                                                              IsEnabled="{Binding PlacementTarget.DataContext.CanAddChordedPress, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              Click="ExtraAddExtraBindingMenuItem_Click"/>
+                                                    <MenuItem Header="Simultaneous Press"
+                                                              Tag="SimPress"
+                                                              IsEnabled="{Binding PlacementTarget.DataContext.CanAddSimPress, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              Click="ExtraAddExtraBindingMenuItem_Click"/>
+                                                    <MenuItem Header="Start Press"
+                                                              Tag="Start"
+                                                              IsEnabled="{Binding PlacementTarget.DataContext.CanAddStartPress, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              Click="ExtraAddExtraBindingMenuItem_Click"/>
+                                                    <MenuItem Header="Release Press"
+                                                              Tag="Release"
+                                                              IsEnabled="{Binding PlacementTarget.DataContext.CanAddReleasePress, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              Click="ExtraAddExtraBindingMenuItem_Click"/>
+                                                    <MenuItem Header="Distance"
+                                                              Tag="Distance"
+                                                              IsEnabled="{Binding PlacementTarget.DataContext.CanAddDistancePress, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              Click="ExtraAddExtraBindingMenuItem_Click"/>
+                                                </ContextMenu>
+                                            </Button.ContextMenu>
+                                        </Button>
+                                    </DockPanel>
+
+                                    <ItemsControl ItemsSource="{Binding FunctionItems}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Style="{StaticResource JsmccSettingRowBorder}">
+                                                    <Grid>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="Auto"/>
+                                                        </Grid.RowDefinitions>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="160"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <Grid Grid.Row="0"
+                                                              Grid.Column="0"
+                                                              Grid.ColumnSpan="3">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                                                <TextBlock Text="{Binding DisplayName}"
+                                                                           Style="{StaticResource JsmccLabelText}"/>
+                                                                <TextBlock Text="Press behaviour"
+                                                                           Style="{StaticResource JsmccMutedText}"
+                                                                           Margin="0,3,0,0"/>
+                                                            </StackPanel>
+                                                            <Button Grid.Column="1"
+                                                                    Content="Remove Binding"
+                                                                    Tag="{Binding}"
+                                                                    Click="ExtraRemoveBinding_Click"
+                                                                    Style="{StaticResource JsmccDangerButtonStyle}"
+                                                                    MinWidth="112"
+                                                                    VerticalAlignment="Top"
+                                                                    Visibility="{Binding CanRemove, Converter={StaticResource BoolToVis}}"/>
+                                                        </Grid>
+
+                                                        <views:ActionOutputListControl Grid.Row="1"
+                                                                                       Grid.Column="0"
+                                                                                       Grid.ColumnSpan="3"
+                                                                                       Margin="0,6,0,0"/>
+
+                                                        <WrapPanel Grid.Row="2"
+                                                                   Grid.Column="0"
+                                                                   Grid.ColumnSpan="3"
+                                                                   Margin="0,10,0,0">
+                                                            <Border Background="{DynamicResource JsmccBgFieldGroupBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding SupportsToggle, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="Toggle" Style="{StaticResource StickControlLabel}"/>
+                                                                    <CheckBox IsChecked="{Binding ToggleEnabled}"
+                                                                              Style="{StaticResource JsmccToggleStyle}"
+                                                                              VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <Border Background="{DynamicResource JsmccBgFieldGroupBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding SupportsTurbo, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="Turbo" Style="{StaticResource StickControlLabel}"/>
+                                                                    <CheckBox IsChecked="{Binding TurboEnabled}"
+                                                                              Style="{StaticResource JsmccToggleStyle}"
+                                                                              VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <Border Background="{DynamicResource JsmccBgFieldGroupBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding IsTurboEnabled, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="Repeat Time" Style="{StaticResource StickControlLabel}"/>
+                                                                    <hc:NumericUpDown Minimum="0"
+                                                                                      Maximum="60000"
+                                                                                      DecimalPlaces="0"
+                                                                                      Increment="10"
+                                                                                      Width="108"
+                                                                                      Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                                                      Value="{Binding TurboDurationMs, UpdateSourceTrigger=LostFocus}"/>
+                                                                    <TextBlock Text="ms"
+                                                                               Style="{StaticResource JsmccMutedText}"
+                                                                               Margin="6,0,0,0"
+                                                                               VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <Border Background="{DynamicResource JsmccBgFieldGroupBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding SupportsFireDelay, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="Fire Delay" Style="{StaticResource StickControlLabel}"/>
+                                                                    <hc:NumericUpDown Minimum="0"
+                                                                                      Maximum="60000"
+                                                                                      DecimalPlaces="0"
+                                                                                      Increment="10"
+                                                                                      Width="108"
+                                                                                      Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                                                      Value="{Binding FireDelayMs, UpdateSourceTrigger=LostFocus}"/>
+                                                                    <TextBlock Text="ms"
+                                                                               Style="{StaticResource JsmccMutedText}"
+                                                                               Margin="6,0,0,0"
+                                                                               VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <Border Background="{DynamicResource JsmccBgFieldGroupBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding SupportsHoldTime, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="Hold Time" Style="{StaticResource StickControlLabel}"/>
+                                                                    <hc:NumericUpDown Minimum="0"
+                                                                                      Maximum="60000"
+                                                                                      DecimalPlaces="0"
+                                                                                      Increment="10"
+                                                                                      Width="108"
+                                                                                      Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                                                      Value="{Binding HoldMs, UpdateSourceTrigger=LostFocus}"/>
+                                                                    <TextBlock Text="ms"
+                                                                               Style="{StaticResource JsmccMutedText}"
+                                                                               Margin="6,0,0,0"
+                                                                               VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <Border Background="{DynamicResource JsmccBgFieldGroupBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding SupportsTapWindow, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="Tap Window" Style="{StaticResource StickControlLabel}"/>
+                                                                    <hc:NumericUpDown Minimum="0"
+                                                                                      Maximum="60000"
+                                                                                      DecimalPlaces="0"
+                                                                                      Increment="10"
+                                                                                      Width="108"
+                                                                                      Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                                                      Value="{Binding TapWindowMs, UpdateSourceTrigger=LostFocus}"/>
+                                                                    <TextBlock Text="ms"
+                                                                               Style="{StaticResource JsmccMutedText}"
+                                                                               Margin="6,0,0,0"
+                                                                               VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <Border Background="{DynamicResource JsmccBgFieldGroupBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding SupportsDistanceOptions, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="Name" Style="{StaticResource StickControlLabel}"/>
+                                                                    <TextBox Text="{Binding DistanceName, UpdateSourceTrigger=LostFocus}"
+                                                                             Width="128"
+                                                                             Style="{StaticResource JsmccTextBoxStyle}"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <Border Background="{DynamicResource JsmccBgFieldGroupBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding SupportsDistanceOptions, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="Distance" Style="{StaticResource StickControlLabel}"/>
+                                                                    <hc:NumericUpDown Minimum="0.0"
+                                                                                      Maximum="1.0"
+                                                                                      DecimalPlaces="1"
+                                                                                      Increment="0.1"
+                                                                                      Width="108"
+                                                                                      Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                                                      Value="{Binding DistanceValue, UpdateSourceTrigger=LostFocus}"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <Border Background="{DynamicResource JsmccBgFieldGroupBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding SupportsChordOptions, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="Chord Trigger" Style="{StaticResource StickControlLabel}"/>
+                                                                    <ComboBox ItemsSource="{Binding ChordTriggerItems}"
+                                                                              SelectedValue="{Binding ChordTrigger, UpdateSourceTrigger=PropertyChanged}"
+                                                                              SelectedValuePath="Code"
+                                                                              DisplayMemberPath="DisplayName"
+                                                                              MaxDropDownHeight="240"
+                                                                              Width="160"
+                                                                              Style="{StaticResource JsmccComboBoxStyle}"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <Border Background="{DynamicResource JsmccBgFieldGroupBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding SupportsSimPressOptions, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="Simultaneous Press Trigger" Style="{StaticResource StickControlLabel}"/>
+                                                                    <ComboBox ItemsSource="{Binding SimPressTriggerItems}"
+                                                                              SelectedValue="{Binding SimPressTrigger, UpdateSourceTrigger=PropertyChanged}"
+                                                                              SelectedValuePath="Code"
+                                                                              DisplayMemberPath="DisplayName"
+                                                                              MaxDropDownHeight="240"
+                                                                              Width="160"
+                                                                              Style="{StaticResource JsmccComboBoxStyle}"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <Border Background="{DynamicResource JsmccBgInputBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding SupportsSimPressOptions, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="Simultaneous Press Time" Style="{StaticResource StickControlLabel}"/>
+                                                                    <hc:NumericUpDown Minimum="0"
+                                                                                      Maximum="60000"
+                                                                                      DecimalPlaces="0"
+                                                                                      Increment="10"
+                                                                                      Width="108"
+                                                                                      Style="{StaticResource JsmccNumericUpDownStyle}"
+                                                                                      Value="{Binding SimPressTimeMs, UpdateSourceTrigger=LostFocus}"/>
+                                                                    <TextBlock Text="ms"
+                                                                               Style="{StaticResource JsmccMutedText}"
+                                                                               Margin="6,0,0,0"
+                                                                               VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <Border Background="{DynamicResource JsmccBgInputBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding SupportsReleaseOptions, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="End Delay" Style="{StaticResource StickControlLabel}"/>
+                                                                    <TextBox Text="{Binding ReleaseDelayMs, UpdateSourceTrigger=LostFocus}"
+                                                                             Width="72"
+                                                                             Style="{StaticResource JsmccTextBoxStyle}"/>
+                                                                    <TextBlock Text="ms"
+                                                                               Style="{StaticResource JsmccMutedText}"
+                                                                               Margin="6,0,0,0"
+                                                                               VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <Border Background="{DynamicResource JsmccBgFieldGroupBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding SupportsReleaseOptions, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="Max Hold Time" Style="{StaticResource StickControlLabel}"/>
+                                                                    <CheckBox IsChecked="{Binding MaxHoldTimeEnabled}"
+                                                                              Style="{StaticResource JsmccToggleStyle}"
+                                                                              VerticalAlignment="Center"
+                                                                              ToolTip="If held longer than this, Release Press will not fire on release"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <Border Background="{DynamicResource JsmccBgFieldGroupBrush}"
+                                                                    BorderBrush="{DynamicResource JsmccBorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="6,4"
+                                                                    Margin="0,0,8,4"
+                                                                    Visibility="{Binding MaxHoldTimeEnabled, Converter={StaticResource BoolToVis}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="Max Hold Duration" Style="{StaticResource StickControlLabel}"/>
+                                                                    <TextBox Text="{Binding MaxHoldTimeMs, UpdateSourceTrigger=LostFocus}"
+                                                                             Width="72"
+                                                                             Style="{StaticResource JsmccTextBoxStyle}"/>
+                                                                    <TextBlock Text="ms"
+                                                                               Style="{StaticResource JsmccMutedText}"
+                                                                               Margin="6,0,0,0"
+                                                                               VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                        </WrapPanel>
+
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </DockPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>
+

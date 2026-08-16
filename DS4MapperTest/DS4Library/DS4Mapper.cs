@@ -20,6 +20,10 @@ namespace DS4MapperTest.DS4Library
         private LightbarProcessor lightProcess = new LightbarProcessor();
 
         public override InputDeviceType DeviceType => InputDeviceType.DS4;
+        public override double GetNormalisedTriggerPosition(
+            TriggerSensitivityModifierTrigger trigger) => Math.Clamp(
+                (trigger == TriggerSensitivityModifierTrigger.Left ? currentMapperState.L2 : currentMapperState.R2) / 255.0,
+                0.0, 1.0);
         public override DeviceReaderBase BaseReader
         {
             get => reader;
@@ -74,7 +78,7 @@ namespace DS4MapperTest.DS4Library
                 new InputBindingMeta("Share", "Share", InputBindingMeta.InputControlType.Button),
                 new InputBindingMeta("Options", "Options", InputBindingMeta.InputControlType.Button),
                 new InputBindingMeta("PS", "PS", InputBindingMeta.InputControlType.Button),
-                new InputBindingMeta("TouchClick", "Touch Click", InputBindingMeta.InputControlType.Button),
+                new InputBindingMeta("TouchClick", "PS Touchpad Click", InputBindingMeta.InputControlType.Button),
                 new InputBindingMeta("LS", "Left Stick", InputBindingMeta.InputControlType.Stick),
                 new InputBindingMeta("RS", "Right Stick", InputBindingMeta.InputControlType.Stick),
                 new InputBindingMeta("DPad", "DPad", InputBindingMeta.InputControlType.DPad),
@@ -225,7 +229,7 @@ namespace DS4MapperTest.DS4Library
                 new ActionTriggerItem("L3", JoypadActionCodes.BtnThumbL),
                 new ActionTriggerItem("R3", JoypadActionCodes.BtnThumbR),
                 new ActionTriggerItem("Touchpad Touch", JoypadActionCodes.CenterPadTouch),
-                new ActionTriggerItem("Touchpad Click", JoypadActionCodes.CenterPadClick),
+                new ActionTriggerItem("PS Touchpad Click", JoypadActionCodes.CenterPadClick),
 
                 new ActionTriggerItem("TouchpadLeft Touch", JoypadActionCodes.LPadTouch),
                 new ActionTriggerItem("TouchpadLeft Click", JoypadActionCodes.LPadClick),
@@ -499,7 +503,8 @@ namespace DS4MapperTest.DS4Library
                         elapsedReference = gyroSensDefinition.elapsedReference,
                     };
 
-                    PopulateStateGyro(ref gyroFrame);
+                    if (gyroAct.OutputsNativeGyro) PopulateStateGyro(ref gyroFrame);
+                    else ClearStateGyro();
                     gyroAct.Prepare(this, ref gyroFrame);
                     if (gyroAct.active)
                     {
@@ -618,6 +623,63 @@ namespace DS4MapperTest.DS4Library
                     }
                 }
 
+            }
+
+            ActionLayer touchLayer = actionProfile.CurrentActionSet.RecentAppliedLayer;
+            TouchpadMapAction wholeTouchAction = touchLayer.touchpadActionDict["Touchpad"];
+            if (wholeTouchAction.OutputsNativeTouch)
+            {
+                ApplyVirtualTouchState(
+                    NormaliseTouchAxis(currentMapperState.Touch1.X, 0.0, DS4State.TouchInfo.TOUCHPAD_MAX_X),
+                    NormaliseTouchAxis(currentMapperState.Touch1.Y, 0.0, DS4State.TouchInfo.TOUCHPAD_MAX_Y),
+                    currentMapperState.Touch1.Touch,
+                    NormaliseTouchAxis(currentMapperState.Touch2.X, 0.0, DS4State.TouchInfo.TOUCHPAD_MAX_X),
+                    NormaliseTouchAxis(currentMapperState.Touch2.Y, 0.0, DS4State.TouchInfo.TOUCHPAD_MAX_Y),
+                    currentMapperState.Touch2.Touch,
+                    currentMapperState.TouchClickButton);
+            }
+            else
+            {
+                bool leftPassthru = touchLayer.touchpadActionDict["TouchpadLeft"].OutputsNativeTouch;
+                bool rightPassthru = touchLayer.touchpadActionDict["TouchpadRight"].OutputsNativeTouch;
+
+                ref DS4State.TouchInfo leftPrimaryTouchData = ref currentMapperState.Touch1;
+                ref DS4State.TouchInfo rightPrimaryTouchData = ref currentMapperState.Touch2;
+
+                if (currentMapperState.NumTouches > 0)
+                {
+                    if (currentMapperState.Touch1.Touch && currentMapperState.Touch1.LeftRegion)
+                    {
+                        leftPrimaryTouchData = ref currentMapperState.Touch1;
+                    }
+                    else if (currentMapperState.Touch2.Touch && currentMapperState.Touch2.LeftRegion)
+                    {
+                        leftPrimaryTouchData = ref currentMapperState.Touch2;
+                    }
+
+                    if (currentMapperState.Touch1.Touch && currentMapperState.Touch1.RightRegion)
+                    {
+                        rightPrimaryTouchData = ref currentMapperState.Touch1;
+                    }
+                    else if (currentMapperState.Touch2.Touch && currentMapperState.Touch2.RightRegion)
+                    {
+                        rightPrimaryTouchData = ref currentMapperState.Touch2;
+                    }
+                }
+
+                bool leftTouchActive = leftPassthru &&
+                    leftPrimaryTouchData.Touch && leftPrimaryTouchData.LeftRegion;
+                bool rightTouchActive = rightPassthru &&
+                    rightPrimaryTouchData.Touch && rightPrimaryTouchData.RightRegion;
+
+                ApplyVirtualTouchState(
+                    leftTouchActive ? NormaliseTouchAxis(leftPrimaryTouchData.X, 0.0, DS4State.TouchInfo.TOUCHPAD_MAX_X) : 0.0,
+                    leftTouchActive ? NormaliseTouchAxis(leftPrimaryTouchData.Y, 0.0, DS4State.TouchInfo.TOUCHPAD_MAX_Y) : 0.0,
+                    leftTouchActive,
+                    rightTouchActive ? NormaliseTouchAxis(rightPrimaryTouchData.X, 0.0, DS4State.TouchInfo.TOUCHPAD_MAX_X) : 0.0,
+                    rightTouchActive ? NormaliseTouchAxis(rightPrimaryTouchData.Y, 0.0, DS4State.TouchInfo.TOUCHPAD_MAX_Y) : 0.0,
+                    rightTouchActive,
+                    (leftTouchActive || rightTouchActive) && currentMapperState.TouchClickButton);
             }
 
             lightProcess.UpdateLightbarDS4(device, actionProfile);
@@ -1108,15 +1170,43 @@ namespace DS4MapperTest.DS4Library
 
         public override void HookFeedback()
         {
-            viiper360Feedback = TestVIIPER360Feedback;
-            bool result = LibVIIPER.SetXbox360RumbleCallback(deviceHandle, viiper360Feedback);
-            //Trace.WriteLine($"RESULT {result}");
+            if (outputControlType == OutputContType.Xbox360)
+            {
+                viiper360Feedback = TestVIIPER360Feedback;
+                bool result = LibVIIPER.SetXbox360RumbleCallback(deviceHandle, viiper360Feedback);
+            }
+            else if (outputControlType == OutputContType.DualSense ||
+                outputControlType == OutputContType.DualSenseEdge)
+            {
+                viiperDSFeedback = TestVIIPERDSFeedback;
+                bool result = LibVIIPER.SetDualSenseOutputCallback(deviceHandle, viiperDSFeedback);
+            }
+            else if (outputControlType == OutputContType.SwitchPro2)
+            {
+                viiperNS2ProFeedback = TestVIIPERNS2ProFeedback;
+                bool result = LibVIIPER.SetNS2ProOutputCallback(deviceHandle, viiperNS2ProFeedback);
+            }
         }
 
         public void TestVIIPER360Feedback(nuint handle, byte leftMotor, byte rightMotor)
         {
             device.FeedbackStateRef.LeftHeavy = leftMotor;
             device.FeedbackStateRef.RightLight = rightMotor;
+            device.RumbleDirty = true;
+        }
+
+        public void TestVIIPERDSFeedback(nuint handle, byte rumbleSmall, byte rumbleLarge,
+            byte ledRed, byte ledGreen, byte ledBlue, byte playerLeds)
+        {
+            device.FeedbackStateRef.LeftHeavy = rumbleLarge;
+            device.FeedbackStateRef.RightLight = rumbleSmall;
+            device.RumbleDirty = true;
+        }
+
+        public void TestVIIPERNS2ProFeedback(nuint handle, NS2ProOutputState output)
+        {
+            device.FeedbackStateRef.LeftHeavy = (byte)(ApproximateNS2ProRumbleRatio(output, true) * 255.0);
+            device.FeedbackStateRef.RightLight = (byte)(ApproximateNS2ProRumbleRatio(output, false) * 255.0);
             device.RumbleDirty = true;
         }
     }

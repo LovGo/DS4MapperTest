@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using DS4MapperTest.Common;
+using DS4MapperTest.StickActions;
 
 namespace DS4MapperTest.TouchpadActions
 {
@@ -16,8 +18,18 @@ namespace DS4MapperTest.TouchpadActions
             public const string REAL_WORLD_CALIBRATION = "RealWorldCalibration";
             public const string FLICK_THRESHOLD = "FlickThreshold";
             public const string FLICK_TIME = "FlickTime";
+            public const string FLICK_TIME_EXPONENT = "FlickTimeExponent";
             public const string MIN_ANGLE_THRESHOLD = "MinAngleThreshold";
             public const string IN_GAME_SENS = "InGameSens";
+            public const string RELEASE_DAMPENING_SPEED = "ReleaseDampeningSpeed";
+            public const string MULTIPLIER_COMPENSATION = "MultiplierCompensation";
+            public const string ACCELERATION_MULTIPLIER = "AccelerationMultiplier";
+            public const string ROTATE_SMOOTH_OVERRIDE = "RotateSmoothOverride";
+            public const string SUB_MODE = "SubMode";
+            public const string SNAP_ANGLE = "SnapAngle";
+            public const string SNAP_STRENGTH = "SnapStrength";
+            public const string SWEEP_SENSITIVITY = "SweepSensitivity";
+            public const string FRONT_ANGLE_DEADZONE = "FrontAngleDeadzone";
         }
 
         private HashSet<string> fullPropertySet = new HashSet<string>()
@@ -26,8 +38,18 @@ namespace DS4MapperTest.TouchpadActions
             PropertyKeyStrings.REAL_WORLD_CALIBRATION,
             PropertyKeyStrings.FLICK_THRESHOLD,
             PropertyKeyStrings.FLICK_TIME,
+            PropertyKeyStrings.FLICK_TIME_EXPONENT,
             PropertyKeyStrings.MIN_ANGLE_THRESHOLD,
             PropertyKeyStrings.IN_GAME_SENS,
+            PropertyKeyStrings.RELEASE_DAMPENING_SPEED,
+            PropertyKeyStrings.MULTIPLIER_COMPENSATION,
+            PropertyKeyStrings.ACCELERATION_MULTIPLIER,
+            PropertyKeyStrings.ROTATE_SMOOTH_OVERRIDE,
+            PropertyKeyStrings.SUB_MODE,
+            PropertyKeyStrings.SNAP_ANGLE,
+            PropertyKeyStrings.SNAP_STRENGTH,
+            PropertyKeyStrings.SWEEP_SENSITIVITY,
+            PropertyKeyStrings.FRONT_ANGLE_DEADZONE,
         };
 
         public class FlickStickMappingData
@@ -38,11 +60,51 @@ namespace DS4MapperTest.TouchpadActions
             public const double DEFAULT_FLICK_PROGRESS = 0.0;
             public const double DEFAULT_FLICK_SIZE = 0.0;
             public const double DEFAULT_FLICK_ANGLE_REMAINDER = 0.0;
+            public const double DEFAULT_FLICK_TIME_ACTUAL = 0.0;
 
             //public OneEuroFilter flickFilter = new OneEuroFilter(DEFAULT_MINCUTOFF, DEFAULT_BETA);
             public double flickProgress = DEFAULT_FLICK_PROGRESS;
             public double flickSize = DEFAULT_FLICK_SIZE;
             public double flickAngleRemainder = DEFAULT_FLICK_ANGLE_REMAINDER;
+            public double flickTimeActual = DEFAULT_FLICK_TIME_ACTUAL;
+
+            // This is intentionally the same size as JoyShockMapper's flick-stick
+            // rotation buffer. The active portion is capped to a 64 ms window.
+            public const int FLICK_SMOOTH_SAMPLE_COUNT = 256;
+            private readonly double[] flickRotationSamples =
+                new double[FLICK_SMOOTH_SAMPLE_COUNT];
+            private int frontFlickRotationSample;
+
+            public void ResetRotationSmoothing()
+            {
+                Array.Clear(flickRotationSamples, 0, flickRotationSamples.Length);
+                frontFlickRotationSample = 0;
+            }
+
+            public double GetSmoothedStickRotation(double value, double bottomThreshold,
+                double topThreshold, int maxSamples)
+            {
+                frontFlickRotationSample--;
+                if (frontFlickRotationSample < 0)
+                {
+                    frontFlickRotationSample = FLICK_SMOOTH_SAMPLE_COUNT - 1;
+                }
+
+                double immediateFactor = topThreshold <= bottomThreshold ? 1.0 :
+                    (Math.Abs(value) - bottomThreshold) / (topThreshold - bottomThreshold);
+                immediateFactor = Math.Clamp(immediateFactor, 0.0, 1.0);
+                double frontSample = flickRotationSamples[frontFlickRotationSample] =
+                    value * (1.0 - immediateFactor);
+
+                double result = frontSample / maxSamples;
+                for (int i = 1; i < maxSamples; i++)
+                {
+                    int rotatedIndex = (frontFlickRotationSample + i) % FLICK_SMOOTH_SAMPLE_COUNT;
+                    result += flickRotationSamples[rotatedIndex] / maxSamples;
+                }
+
+                return result + value * immediateFactor;
+            }
 
             public void Reset()
             {
@@ -50,10 +112,16 @@ namespace DS4MapperTest.TouchpadActions
                 flickProgress = DEFAULT_FLICK_PROGRESS;
                 flickSize = DEFAULT_FLICK_SIZE;
                 flickAngleRemainder = DEFAULT_FLICK_ANGLE_REMAINDER;
+                flickTimeActual = DEFAULT_FLICK_TIME_ACTUAL;
+                ResetRotationSmoothing();
             }
         }
 
         private const double IN_GAME_SENS_DEFAULT = 1.0;
+        public const bool MULTIPLIER_COMPENSATION_DEFAULT = false;
+        public const double ACCELERATION_MULTIPLIER_DEFAULT = 1.0;
+        public const double ACCELERATION_MULTIPLIER_MIN = 0.01;
+        public const double ACCELERATION_MULTIPLIER_MAX = 100.0;
 
         private double realWorldCalibration = 5.00;
         public double RealWorldCalibration
@@ -61,7 +129,7 @@ namespace DS4MapperTest.TouchpadActions
             get => realWorldCalibration; set => realWorldCalibration = value;
         }
 
-        private double flickThreshold = 0.6;
+        private double flickThreshold = 0.7;
         public double FlickThreshold
         {
             get => flickThreshold; set => flickThreshold = value;
@@ -73,17 +141,107 @@ namespace DS4MapperTest.TouchpadActions
             get => flickTime; set => flickTime = value;
         }
 
-        private double minAngleThreshold;
+        private double flickTimeExponent = 0.0;
+        public double FlickTimeExponent
+        {
+            get => flickTimeExponent;
+            set => flickTimeExponent = Math.Clamp(value, 0.0, 1.0);
+        }
+
+        // Retained for backward-compatible profile loading. It is deliberately
+        // disabled: small rotation steps are preserved and smoothed instead of
+        // accumulated behind a threshold, matching the current sweep approach.
+        private const double MIN_ANGLE_THRESHOLD_DISABLED = 0.0;
+        private double minAngleThreshold = MIN_ANGLE_THRESHOLD_DISABLED;
         public double MinAngleThreshold
         {
-            get => minAngleThreshold; set => minAngleThreshold = value;
+            get => MIN_ANGLE_THRESHOLD_DISABLED;
+            set => minAngleThreshold = MIN_ANGLE_THRESHOLD_DISABLED;
         }
 
         private double inGameSens = IN_GAME_SENS_DEFAULT;
         public double InGameSens
         {
             get => inGameSens;
-            set => inGameSens = Math.Clamp(value, 0.1, 10.0);
+            set => inGameSens = Math.Clamp(value, 0.01, 10.0);
+        }
+
+        private double releaseDampeningSpeed = 2.5;
+        public double ReleaseDampeningSpeed
+        {
+            get => releaseDampeningSpeed;
+            set => releaseDampeningSpeed = Math.Clamp(value, 0.0, 10.0);
+        }
+
+        private bool multiplierCompensation = MULTIPLIER_COMPENSATION_DEFAULT;
+        public bool MultiplierCompensation
+        {
+            get => multiplierCompensation; set => multiplierCompensation = value;
+        }
+
+        private double accelerationMultiplier = ACCELERATION_MULTIPLIER_DEFAULT;
+        public double AccelerationMultiplier
+        {
+            get => accelerationMultiplier;
+            set => accelerationMultiplier = Math.Clamp(value,
+                ACCELERATION_MULTIPLIER_MIN, ACCELERATION_MULTIPLIER_MAX);
+        }
+
+        // Matches JoyShockMapper's ROTATE_SMOOTH_OVERRIDE semantics. -1 uses its
+        // controller-resolution default, 0 disables smoothing, and positive values
+        // set the small-angle threshold in radians per mapper update.
+        private double rotateSmoothOverride = -1.0;
+        public double RotateSmoothOverride
+        {
+            get => rotateSmoothOverride;
+            set => rotateSmoothOverride = Math.Clamp(value, -1.0, 1.0);
+        }
+
+        // Matches Steam Input's Flick Stick Sweep Sensitivity. A dimensionless
+        // multiplier applied only to the continuous sweep rotation, not the
+        // initial flick-turn. 1.0 is a natural 1:1 angular ratio; 0 disables
+        // sweep rotation entirely.
+        private double sweepSensitivity = 1.0;
+        public double SweepSensitivity
+        {
+            get => sweepSensitivity;
+            set => sweepSensitivity = Math.Clamp(value, 0.0, 6.0);
+        }
+
+        // Matches JoyShockMapper's FLICK_DEADZONE_ANGLE. Pushing a stick
+        // perfectly forward is unrealistic, so a small unwanted flick-turn
+        // happens whenever the user meant to hold forward and start
+        // sweeping. Any initial flick within this many degrees of forward
+        // is zeroed out; the sweep that follows is unaffected.
+        private double frontAngleDeadzone = 7.0;
+        public double FrontAngleDeadzone
+        {
+            get => frontAngleDeadzone;
+            set => frontAngleDeadzone = Math.Clamp(value, 0.0, 180.0);
+        }
+
+        private FlickStickSubMode subMode = FlickStickSubMode.Standard;
+        public FlickStickSubMode SubMode
+        {
+            get => subMode;
+            set => subMode = value;
+        }
+
+        // Matches JoyShockMapper's FLICK_SNAP_MODE and FLICK_SNAP_STRENGTH. Only the
+        // initial flick is snapped; sweeping a held touch is left untouched.
+        private FlickSnapAngle snapAngle = FlickSnapping.DEFAULT_SNAP_ANGLE;
+        public FlickSnapAngle SnapAngle
+        {
+            get => snapAngle;
+            set => snapAngle = value;
+        }
+
+        private double snapStrength = FlickSnapping.DEFAULT_STRENGTH;
+        public double SnapStrength
+        {
+            get => snapStrength;
+            set => snapStrength = Math.Clamp(value, FlickSnapping.MinStrength,
+                FlickSnapping.MaxStrength);
         }
 
         private FlickStickMappingData tempFlickData;
@@ -109,35 +267,24 @@ namespace DS4MapperTest.TouchpadActions
 
             angleChange = HandleFlickStickAngle(mapper, axisXVal, axisYVal, prevAxisXVal, prevAxisYVal);
             double lsangle = angleChange * 180.0 / Math.PI;
-            if (lsangle == 0.0)
-            {
-                tempFlickData.flickAngleRemainder = 0.0;
-            }
-            else if (lsangle >= 0.0 && tempFlickData.flickAngleRemainder >= 0.0)
-            {
-                lsangle += tempFlickData.flickAngleRemainder;
-            }
-
+            // Never discard sub-threshold movement. The former implementation only
+            // accumulated positive deltas, which made thresholded rotation uneven.
+            lsangle += tempFlickData.flickAngleRemainder;
             tempFlickData.flickAngleRemainder = 0.0;
 
-            if (minAngleThreshold == 0.0 && lsangle != 0.0)
-            //if (Math.Abs(lsangle) >= 0.5)
+            if (lsangle != 0.0)
             {
                 tempFlickData.flickAngleRemainder = 0.0;
                 //flickAngleRemainder = lsangle - (int)lsangle;
                 //lsangle = (int)lsangle;
                 tempMouseDeltaX += lsangle * realWorldCalibration / inGameSens;
             }
-            else if (Math.Abs(lsangle) >= minAngleThreshold)
+
+            if (multiplierCompensation && tempMouseDeltaX != 0.0)
             {
-                tempFlickData.flickAngleRemainder = 0.0;
-                //flickAngleRemainder = lsangle - (int)lsangle;
-                //lsangle = (int)lsangle;
-                tempMouseDeltaX += lsangle * realWorldCalibration / inGameSens;
-            }
-            else
-            {
-                tempFlickData.flickAngleRemainder = lsangle;
+                double accelMultiplier = Math.Clamp(accelerationMultiplier,
+                    ACCELERATION_MULTIPLIER_MIN, ACCELERATION_MULTIPLIER_MAX);
+                tempMouseDeltaX /= accelMultiplier;
             }
 
             if (tempMouseDeltaX != 0.0)
@@ -159,8 +306,8 @@ namespace DS4MapperTest.TouchpadActions
         {
             if (tempMouseDeltaX != 0.0)
             {
-                mapper.MouseX += tempMouseDeltaX;
-                mapper.MouseSync = true;
+                mapper.AddRouteRelativeMouseMotion(MouseOutputRoute.Trackpad, tempMouseDeltaX, 0.0);
+                mapper.SetRouteRelativeMouseSync(MouseOutputRoute.Trackpad, true);
                 active = true;
             }
             else
@@ -216,11 +363,41 @@ namespace DS4MapperTest.TouchpadActions
                         case PropertyKeyStrings.FLICK_TIME:
                             flickTime = tempFlickAction.flickTime;
                             break;
+                        case PropertyKeyStrings.FLICK_TIME_EXPONENT:
+                            flickTimeExponent = tempFlickAction.flickTimeExponent;
+                            break;
                         case PropertyKeyStrings.MIN_ANGLE_THRESHOLD:
                             minAngleThreshold = tempFlickAction.minAngleThreshold;
                             break;
                         case PropertyKeyStrings.IN_GAME_SENS:
                             inGameSens = tempFlickAction.inGameSens;
+                            break;
+                        case PropertyKeyStrings.RELEASE_DAMPENING_SPEED:
+                            releaseDampeningSpeed = tempFlickAction.releaseDampeningSpeed;
+                            break;
+                        case PropertyKeyStrings.MULTIPLIER_COMPENSATION:
+                            multiplierCompensation = tempFlickAction.multiplierCompensation;
+                            break;
+                        case PropertyKeyStrings.ACCELERATION_MULTIPLIER:
+                            accelerationMultiplier = tempFlickAction.accelerationMultiplier;
+                            break;
+                        case PropertyKeyStrings.ROTATE_SMOOTH_OVERRIDE:
+                            rotateSmoothOverride = tempFlickAction.rotateSmoothOverride;
+                            break;
+                        case PropertyKeyStrings.SUB_MODE:
+                            subMode = tempFlickAction.subMode;
+                            break;
+                        case PropertyKeyStrings.SNAP_ANGLE:
+                            snapAngle = tempFlickAction.snapAngle;
+                            break;
+                        case PropertyKeyStrings.SNAP_STRENGTH:
+                            snapStrength = tempFlickAction.snapStrength;
+                            break;
+                        case PropertyKeyStrings.SWEEP_SENSITIVITY:
+                            sweepSensitivity = tempFlickAction.sweepSensitivity;
+                            break;
+                        case PropertyKeyStrings.FRONT_ANGLE_DEADZONE:
+                            frontAngleDeadzone = tempFlickAction.frontAngleDeadzone;
                             break;
                         default:
                             break;
@@ -263,11 +440,41 @@ namespace DS4MapperTest.TouchpadActions
                 case PropertyKeyStrings.FLICK_TIME:
                     flickTime = tempFlickAction.flickTime;
                     break;
+                case PropertyKeyStrings.FLICK_TIME_EXPONENT:
+                    flickTimeExponent = tempFlickAction.flickTimeExponent;
+                    break;
                 case PropertyKeyStrings.MIN_ANGLE_THRESHOLD:
                     minAngleThreshold = tempFlickAction.minAngleThreshold;
                     break;
                 case PropertyKeyStrings.IN_GAME_SENS:
                     inGameSens = tempFlickAction.inGameSens;
+                    break;
+                case PropertyKeyStrings.RELEASE_DAMPENING_SPEED:
+                    releaseDampeningSpeed = tempFlickAction.releaseDampeningSpeed;
+                    break;
+                case PropertyKeyStrings.MULTIPLIER_COMPENSATION:
+                    multiplierCompensation = tempFlickAction.multiplierCompensation;
+                    break;
+                case PropertyKeyStrings.ACCELERATION_MULTIPLIER:
+                    accelerationMultiplier = tempFlickAction.accelerationMultiplier;
+                    break;
+                case PropertyKeyStrings.ROTATE_SMOOTH_OVERRIDE:
+                    rotateSmoothOverride = tempFlickAction.rotateSmoothOverride;
+                    break;
+                case PropertyKeyStrings.SUB_MODE:
+                    subMode = tempFlickAction.subMode;
+                    break;
+                case PropertyKeyStrings.SNAP_ANGLE:
+                    snapAngle = tempFlickAction.snapAngle;
+                    break;
+                case PropertyKeyStrings.SNAP_STRENGTH:
+                    snapStrength = tempFlickAction.snapStrength;
+                    break;
+                case PropertyKeyStrings.SWEEP_SENSITIVITY:
+                    sweepSensitivity = tempFlickAction.sweepSensitivity;
+                    break;
+                case PropertyKeyStrings.FRONT_ANGLE_DEADZONE:
+                    frontAngleDeadzone = tempFlickAction.frontAngleDeadzone;
                     break;
                 default:
                     break;
@@ -300,14 +507,43 @@ namespace DS4MapperTest.TouchpadActions
             double length = (currentTestX * currentTestX) + (currentTestY * currentTestY);
             double testLength = flickThreshold * flickThreshold;
 
+            double sweepDampen = 1.0;
+            if (releaseDampeningSpeed > 0.0 && mapper.CurrentLatency > 0.0)
+            {
+                double prevMag = Math.Sqrt(lastLength);
+                double currMag = Math.Sqrt(length);
+                double returnVelocity = (prevMag - currMag) / mapper.CurrentLatency;
+                if (returnVelocity > 0.0)
+                {
+                    double dampenFactor = Math.Clamp(returnVelocity / releaseDampeningSpeed, 0.0, 1.0);
+                    sweepDampen = 1.0 - dampenFactor;
+                }
+            }
+
             if (length >= testLength)
             {
                 if (lastLength < testLength)
                 {
-                    // Start new Flick
-                    flickData.flickProgress = 0.0; // Reset Flick progress
-                    flickData.flickSize = Math.Atan2((axisXVal - axisXMid), (axisYVal - axisYMid));
-                    //flickData.flickFilter.Filter(0.0, mapper.CurrentLatency);
+                    if (subMode != FlickStickSubMode.RotateOnly)
+                    {
+                        // Start a new flick unless this is the rotation-only variant.
+                        flickData.flickProgress = 0.0;
+                        // Snap before deriving the flick duration so a snapped flick
+                        // is timed by the angle it actually travels.
+                        flickData.flickSize = FlickSnapping.Apply(
+                            Math.Atan2((axisXVal - axisXMid), (axisYVal - axisYMid)),
+                            snapAngle, snapStrength);
+                        // Cancel the initial flick when it lands close enough to
+                        // forward. The sweep tracked afterwards still starts from
+                        // the stick's real angle, not the zeroed flick.
+                        if (Math.Abs(flickData.flickSize) * 180.0 / Math.PI < frontAngleDeadzone)
+                        {
+                            flickData.flickSize = 0.0;
+                        }
+                        flickData.flickTimeActual = flickTime * Math.Pow(Math.Abs(flickData.flickSize) / Math.PI, flickTimeExponent);
+                        flickData.ResetRotationSmoothing();
+                        //flickData.flickFilter.Filter(0.0, mapper.CurrentLatency);
+                    }
                 }
                 else
                 {
@@ -325,7 +561,30 @@ namespace DS4MapperTest.TouchpadActions
                     //Trace.WriteLine(string.Format("ANGLE CHANGE: {0} {1} {2}", stickAngle, lastStickAngle, rawAngleChange));
                     //Trace.WriteLine(string.Format("{0} {1} | {2} {3}", axisXVal, prevXVal, axisYVal, prevYVal));
                     //angleChange = flickData.flickFilter.Filter(angleChange, mapper.CurrentLatency);
-                    result += angleChange;
+                    // Flick Only deliberately preserves the initial flick but blocks
+                    // the camera rotation caused by sweeping a held touch.
+                    if (subMode != FlickStickSubMode.FlickOnly)
+                    {
+                        // JoyShockMapper's soft-tiered smoothing: only tiny touch
+                        // steps are buffered (up to 64 ms); larger rotations remain
+                        // immediate. This hides low-resolution touch quantisation
+                        // without making normal sweeping feel delayed.
+                        double outputScale = realWorldCalibration / inGameSens;
+                        if (outputScale != 0.0)
+                        {
+                            double rotationOutput = angleChange * sweepSensitivity * sweepDampen * outputScale;
+                            int maxSmoothingSamples = mapper.CurrentLatency > 0.0
+                                ? Math.Clamp((int)Math.Ceiling(0.064 / mapper.CurrentLatency), 1,
+                                    FlickStickMappingData.FLICK_SMOOTH_SAMPLE_COUNT)
+                                : 1;
+                            double stepSize = rotateSmoothOverride < 0.0 ? 0.01 : rotateSmoothOverride;
+                            rotationOutput = flickData.GetSmoothedStickRotation(rotationOutput,
+                                outputScale * stepSize * 2.0,
+                                outputScale * stepSize * 4.0,
+                                maxSmoothingSamples);
+                            result += rotationOutput / outputScale;
+                        }
+                    }
                 }
             }
             else
@@ -337,8 +596,9 @@ namespace DS4MapperTest.TouchpadActions
 
             // Continue Flick motion
             double lastFlickProgress = flickData.flickProgress;
-            double testFlickTime = flickTime;
-            if (lastFlickProgress < testFlickTime)
+            double testFlickTime = flickData.flickTimeActual;
+            if (subMode != FlickStickSubMode.RotateOnly &&
+                lastFlickProgress < testFlickTime)
             {
                 flickData.flickProgress = Math.Min(flickData.flickProgress + mapper.CurrentLatency,
                     testFlickTime);

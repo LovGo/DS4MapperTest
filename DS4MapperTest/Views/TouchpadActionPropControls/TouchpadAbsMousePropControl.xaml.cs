@@ -21,7 +21,7 @@ namespace DS4MapperTest.Views.TouchpadActionPropControls
     /// <summary>
     /// Interaction logic for TouchpadAbsMousePropControl.xaml
     /// </summary>
-    public partial class TouchpadAbsMousePropControl : UserControl
+    public partial class TouchpadAbsMousePropControl : UserControl, ISectionAwareTouchpadPropControl
     {
         public class ButtonBindingArgs : EventArgs
         {
@@ -58,6 +58,18 @@ namespace DS4MapperTest.Views.TouchpadActionPropControls
             touchAbsMousePropVM = new TouchpadAbsMousePropViewModel(mapper, action);
 
             DataContext = touchAbsMousePropVM;
+        }
+
+        public void ApplySection(TouchpadSettingsSection section)
+        {
+            ExtraFieldsPanel.Visibility = TouchpadUiFeatureFlags.ShowActionNameField && section == TouchpadSettingsSection.Extra
+                ? Visibility.Visible : Visibility.Collapsed;
+            MovementFieldsPanel.Visibility = section == TouchpadSettingsSection.MouseMovement
+                ? Visibility.Visible : Visibility.Collapsed;
+            FilteringFieldsPanel.Visibility = section == TouchpadSettingsSection.FilteringStabilisation
+                ? Visibility.Visible : Visibility.Collapsed;
+            AdvancedFieldsPanel.Visibility = section == TouchpadSettingsSection.OuterRing
+                ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void btnEditTest_Click(object sender, RoutedEventArgs e)

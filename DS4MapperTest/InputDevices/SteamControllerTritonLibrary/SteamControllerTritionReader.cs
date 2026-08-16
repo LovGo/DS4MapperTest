@@ -31,6 +31,9 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
             SteamControllerTritonDevice device);
         public virtual event SteamControllerReportDelegate Report;
 
+        public override GyroCalibrationStatus GyroCalibrationStatus => gyroCalibrationUtil.Status;
+        public override void RequestGyroCalibration() => gyroCalibrationUtil.RequestCalibrationAfterDelay(1000);
+
         public SteamControllerTritonReader(SteamControllerTritonDevice inputDevice)
         {
             this.device = inputDevice;
@@ -69,7 +72,7 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
 
             PrepareDevice();
 
-            inputThread = new Thread(ReadInput);
+            inputThread = new Thread(() => RunReadInputSafely(ReadInput));
             inputThread.IsBackground = true;
             inputThread.Priority = ThreadPriority.AboveNormal;
             inputThread.Name = "Steam Controller Triton Reader Thread";
@@ -97,6 +100,14 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
             }
 
             started = false;
+        }
+
+        public static bool IsFirstControllerStateReport(bool firstReport,
+            byte reportId)
+        {
+            return firstReport &&
+                (reportId == SteamControllerTritonDevice.ID_TRITON_CONTROLLER_STATE ||
+                reportId == SteamControllerTritonDevice.ID_TRITON_CONTROLLER_STATE_BLE);
         }
 
         protected virtual void ReadInput()
@@ -199,8 +210,7 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
                             continue;
                         }
                         */
-                        else if (firstReport && (tempByte == SteamControllerTritonDevice.ID_TRITON_CONTROLLER_STATE ||
-                            tempByte == SteamControllerTritonDevice.ID_TRITON_CONTROLLER_STATE_BLE))
+                        else if (IsFirstControllerStateReport(firstReport, tempByte))
                         {
                             Console.WriteLine("CAN READ REPORTS. NICE");
 
@@ -328,14 +338,12 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
                         current.LeftPad.X = (short)((inputReportBuffer[19] << 8) | inputReportBuffer[18]);
                         current.LeftPad.Y = (short)((inputReportBuffer[21] << 8) | inputReportBuffer[20]);
 
-                        // TODO: Use this somewhere.
                         short tempTouchpadPressure = (short)((inputReportBuffer[23] << 8) | inputReportBuffer[22]);
                         current.LeftPad.Pressure = tempTouchpadPressure;
 
                         current.RightPad.X = (short)((inputReportBuffer[25] << 8) | inputReportBuffer[24]);
                         current.RightPad.Y = (short)((inputReportBuffer[27] << 8) | inputReportBuffer[26]);
 
-                        // TODO: Use this somewhere.
                         tempTouchpadPressure = (short)((inputReportBuffer[29] << 8) | inputReportBuffer[28]);
                         current.RightPad.Pressure = tempTouchpadPressure;
 
@@ -362,13 +370,10 @@ namespace DS4MapperTest.InputDevices.SteamControllerTritonLibrary
                         current.Motion.GyroYaw = (short)(-1 * ((inputReportBuffer[45] << 8) | inputReportBuffer[44]));
                         current.Motion.GyroYaw = (short)(current.Motion.GyroYaw - device.gyroCalibOffsets[SteamControllerTritonDevice.IMU_YAW_IDX]);
 
-                        if (gyroCalibrationUtil.gyroAverageTimer.IsRunning)
-                        {
-                            int currentYaw = current.Motion.GyroYaw, currentPitch = current.Motion.GyroPitch, currentRoll = current.Motion.GyroRoll;
-                            int AccelX = current.Motion.AccelX, AccelY = current.Motion.AccelY, AccelZ = current.Motion.AccelZ;
-                            gyroCalibrationUtil.CalcSensorCamples(ref currentYaw, ref currentPitch, ref currentRoll,
-                                ref AccelX, ref AccelY, ref AccelZ);
-                        }
+                        int currentYaw = current.Motion.GyroYaw, currentPitch = current.Motion.GyroPitch, currentRoll = current.Motion.GyroRoll;
+                        int AccelX = current.Motion.AccelX, AccelY = current.Motion.AccelY, AccelZ = current.Motion.AccelZ;
+                        gyroCalibrationUtil.Update(ref currentYaw, ref currentPitch, ref currentRoll,
+                            ref AccelX, ref AccelY, ref AccelZ);
 
                         current.Motion.GyroYaw -= (short)gyroCalibrationUtil.gyro_offset_x;
                         current.Motion.GyroPitch -= (short)gyroCalibrationUtil.gyro_offset_y;

@@ -145,16 +145,6 @@ namespace DS4MapperTest.Views
                     }
 
                     break;
-                case ReleaseFunc releaseFunc:
-                    {
-                        ReleaseFuncPropControl propControl = new ReleaseFuncPropControl();
-                        propControl.PostInit(funcBindVM.Mapper, funcBindVM.Action, releaseFunc);
-                        propControl.RequestBindingEditor += PropControl_RequestBindingEditor;
-                        propControl.RequestChangeFuncType += PropControl_RequestChangeFuncType;
-                        funcBindVM.DisplayPropControl = propControl;
-                    }
-
-                    break;
                 case StartPressFunc startFunc:
                     {
                         StartPressFuncPropControl propControl = new StartPressFuncPropControl();
@@ -169,6 +159,26 @@ namespace DS4MapperTest.Views
                     {
                         DistanceFuncPropControl propControl = new DistanceFuncPropControl();
                         propControl.PostInit(funcBindVM.Mapper, funcBindVM.Action, distFunc);
+                        propControl.RequestBindingEditor += PropControl_RequestBindingEditor;
+                        propControl.RequestChangeFuncType += PropControl_RequestChangeFuncType;
+                        funcBindVM.DisplayPropControl = propControl;
+                    }
+
+                    break;
+                case ChordedPressFunc chordedFunc:
+                    {
+                        ChordedPressFuncPropControl propControl = new ChordedPressFuncPropControl();
+                        propControl.PostInit(funcBindVM.Mapper, funcBindVM.Action, chordedFunc);
+                        propControl.RequestBindingEditor += PropControl_RequestBindingEditor;
+                        propControl.RequestChangeFuncType += PropControl_RequestChangeFuncType;
+                        funcBindVM.DisplayPropControl = propControl;
+                    }
+
+                    break;
+                case ReleaseFunc releaseFunc:
+                    {
+                        ReleaseFuncPropControl propControl = new ReleaseFuncPropControl();
+                        propControl.PostInit(funcBindVM.Mapper, funcBindVM.Action, releaseFunc);
                         propControl.RequestBindingEditor += PropControl_RequestBindingEditor;
                         propControl.RequestChangeFuncType += PropControl_RequestChangeFuncType;
                         funcBindVM.DisplayPropControl = propControl;

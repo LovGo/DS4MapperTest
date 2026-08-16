@@ -34,6 +34,9 @@ namespace DS4MapperTest.StickActions
             public const string PAD_MODE = "PadMode";
             public const string DEAD_ZONE_TYPE = "DeadZoneType";
             public const string DEAD_ZONE = "DeadZone";
+            public const string SEPARATE_AXIS_DEAD_ZONES = "SeparateAxisDeadZones";
+            public const string DEAD_ZONE_X = "DeadZoneX";
+            public const string DEAD_ZONE_Y = "DeadZoneY";
             public const string MAX_ZONE = "MaxZone";
             public const string ROTATION = "Rotation";
             public const string DIAGONAL_RANGE = "DiagonalRange";
@@ -41,6 +44,24 @@ namespace DS4MapperTest.StickActions
             public const string USE_OUTER_RING = "UseOuterRing";
             public const string OUTER_RING_DEAD_ZONE = "OuterRingDeadZone";
             public const string USE_AS_OUTER_RING = "UseAsOuterRing";
+
+            public const string COUNTER_MOVEMENT_ENABLED = "CounterMovementReleasePressEnabled";
+            public const string COUNTER_MOVEMENT_USE_ARROW_KEYS = "UseArrowKeysForCounterMovementPresses";
+            public const string COUNTER_MOVEMENT_TAP_LENGTH_PRESET = "CounterMovementTapLengthPreset";
+            public const string COUNTER_MOVEMENT_TAP_LENGTH_MODE = "OppositeTapLengthMode";
+            public const string COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS = "OppositeTapLengthMs";
+            public const string COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT = "OppositeTapLengthVariancePercent";
+            public const string COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS = "OppositeTapLengthMinimumMs";
+            public const string COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS = "OppositeTapLengthMaximumMs";
+            public const string COUNTER_MOVEMENT_START_DELAY_MODE = "OppositeTapStartDelayMode";
+            public const string COUNTER_MOVEMENT_START_DELAY_FIXED_MS = "OppositeTapStartDelayMs";
+            public const string COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT = "OppositeTapStartDelayVariancePercent";
+            public const string COUNTER_MOVEMENT_START_DELAY_MIN_MS = "OppositeTapStartDelayMinimumMs";
+            public const string COUNTER_MOVEMENT_START_DELAY_MAX_MS = "OppositeTapStartDelayMaximumMs";
+            // Kept under the counter-movement namespace so the serialised setting matches
+            // the current UI label.
+            public const string COUNTER_MOVEMENT_MIN_HOLD_MS = "CounterMovementMinimumHoldMs";
+            public const string REQUIRED_STICK_DEFLECTION_THRESHOLD = "RequiredStickDeflectionThreshold";
         }
 
         private HashSet<string> fullPropertySet = new HashSet<string>()
@@ -49,6 +70,9 @@ namespace DS4MapperTest.StickActions
             PropertyKeyStrings.PAD_MODE,
             PropertyKeyStrings.DEAD_ZONE_TYPE,
             PropertyKeyStrings.DEAD_ZONE,
+            PropertyKeyStrings.SEPARATE_AXIS_DEAD_ZONES,
+            PropertyKeyStrings.DEAD_ZONE_X,
+            PropertyKeyStrings.DEAD_ZONE_Y,
             PropertyKeyStrings.MAX_ZONE,
             PropertyKeyStrings.PAD_DIR_UP,
             PropertyKeyStrings.PAD_DIR_DOWN,
@@ -64,6 +88,21 @@ namespace DS4MapperTest.StickActions
             PropertyKeyStrings.USE_AS_OUTER_RING,
             PropertyKeyStrings.ROTATION,
             PropertyKeyStrings.DIAGONAL_RANGE,
+            PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED,
+            PropertyKeyStrings.COUNTER_MOVEMENT_USE_ARROW_KEYS,
+            PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET,
+            PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE,
+            PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS,
+            PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT,
+            PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS,
+            PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS,
+            PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE,
+            PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS,
+            PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT,
+            PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS,
+            PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS,
+            PropertyKeyStrings.COUNTER_MOVEMENT_MIN_HOLD_MS,
+            PropertyKeyStrings.REQUIRED_STICK_DEFLECTION_THRESHOLD,
         };
 
         public enum DPadMode : uint
@@ -72,6 +111,9 @@ namespace DS4MapperTest.StickActions
             EightWay,
             FourWayCardinal,
             FourWayDiagonal,
+            // This is a UI selection marker. StickSideViewModel replaces the action with
+            // StickAnalogEmulationAction before it can be processed or serialised.
+            AnalogEmulation,
         }
 
         public enum DpadDirections : uint
@@ -147,6 +189,9 @@ namespace DS4MapperTest.StickActions
         public bool UseRingButton { get => useRingButton; set => useRingButton = value; }
         public double OuterRingDeadZone { get => outerRingDeadZone; set => outerRingDeadZone = value; }
 
+        private CounterMovementReleasePressProcessor counterMovementReleasePress = new CounterMovementReleasePressProcessor();
+        public CounterMovementReleasePressProcessor CounterMovementReleasePress { get => counterMovementReleasePress; }
+
         public StickDeadZone DeadMod { get => deadMod; }
         //public OutputActionData[] EventCodes { get => eventCodes; }
         //public ActionFunc[] EventCodes3 { get => eventCodes3; }
@@ -210,17 +255,29 @@ namespace DS4MapperTest.StickActions
                 mappingId = parentAction.mappingId;
                 useParentActions = true;
 
-                // Grab references to parentAction AxisDirButton instances
+                // Clone parentAction AxisDirButton instances so this layer owns
+                // independent copies instead of aliasing the parent's objects
                 int tempDir = (int)DpadDirections.Centered;
                 foreach (AxisDirButton tempAction in parentAction.eventCodes4)
                 {
-                    usedEventButtonsList[tempDir] = tempAction;
-                    eventCodes4[tempDir] = tempAction;
+                    AxisDirButton clonedAction = tempAction != null ?
+                        (AxisDirButton)tempAction.DuplicateAction() : null;
+                    usedEventButtonsList[tempDir] = clonedAction;
+                    eventCodes4[tempDir] = clonedAction;
                     useParentDataDraft2[tempDir] = true;
                     tempDir++;
                 }
 
                 useParentRingButton = true;
+                counterMovementReleasePress.Enabled = parentAction.counterMovementReleasePress.Enabled;
+                counterMovementReleasePress.UseArrowKeysForCounterMovementPresses = parentAction.counterMovementReleasePress.UseArrowKeysForCounterMovementPresses;
+                counterMovementReleasePress.TapLengthPreset = parentAction.counterMovementReleasePress.TapLengthPreset;
+                counterMovementReleasePress.OppositeTapLengthMinimumMs = parentAction.counterMovementReleasePress.OppositeTapLengthMinimumMs;
+                counterMovementReleasePress.OppositeTapLengthMaximumMs = parentAction.counterMovementReleasePress.OppositeTapLengthMaximumMs;
+                counterMovementReleasePress.OppositeTapStartDelayMinimumMs = parentAction.counterMovementReleasePress.OppositeTapStartDelayMinimumMs;
+                counterMovementReleasePress.OppositeTapStartDelayMaximumMs = parentAction.counterMovementReleasePress.OppositeTapStartDelayMaximumMs;
+                counterMovementReleasePress.MinimumHoldMs = parentAction.counterMovementReleasePress.MinimumHoldMs;
+                counterMovementReleasePress.ArmingThreshold = parentAction.counterMovementReleasePress.ArmingThreshold;
                 //usedFuncList = usedEventButtonsList;
             }
         }
@@ -300,6 +357,13 @@ namespace DS4MapperTest.StickActions
                 currentDir = DpadDirections.Centered;
 
             }
+
+            // Counter Movement Release Press sees the active D-Pad zone every tick (including the
+            // ticks where the stick has already left the dead zone but is still physically
+            // in motion) and may mask components out of currentDir while a pulse is
+            // suppressing the stick's own returning direction. DetermineDirection already
+            // applies the selected D-Pad sub-mode and hysteresis/diagonal range logic.
+            currentDir = counterMovementReleasePress.Prepare(mapper, axisXDir, axisYDir, maxDirX, maxDirY, currentDir);
 
             //if (currentDir != previousDir)
             {
@@ -850,6 +914,8 @@ namespace DS4MapperTest.StickActions
             //    }
             //}
 
+            counterMovementReleasePress.Event(mapper, eventCodes4);
+
             prevXNorm = xNorm; prevYNorm = yNorm;
             previousDir = currentDir;
             bool ringBtnActive = usedRingButton != null && usedRingButton.active;
@@ -861,6 +927,8 @@ namespace DS4MapperTest.StickActions
 
         public override void Release(Mapper mapper, bool resetState = true, bool ignoreReleaseActions = false)
         {
+            counterMovementReleasePress.Cleanup(mapper, eventCodes4);
+
             if (active || tmpActiveBtns.Count > 0)
             {
                 if (useRingButton && usedRingButton != null)
@@ -957,6 +1025,8 @@ namespace DS4MapperTest.StickActions
         public override void SoftRelease(Mapper mapper, MapAction checkAction,
             bool resetState = true)
         {
+            counterMovementReleasePress.Cleanup(mapper, eventCodes4);
+
             if (active || tmpActiveBtns.Count > 0)
             {
                 StickPadAction checkStickAction = checkAction as StickPadAction;
@@ -1455,6 +1525,15 @@ namespace DS4MapperTest.StickActions
                         case PropertyKeyStrings.DEAD_ZONE:
                             deadMod.DeadZone = tempPadAction.deadMod.DeadZone;
                             break;
+                        case PropertyKeyStrings.SEPARATE_AXIS_DEAD_ZONES:
+                            deadMod.SeparateAxisDeadZones = tempPadAction.deadMod.SeparateAxisDeadZones;
+                            break;
+                        case PropertyKeyStrings.DEAD_ZONE_X:
+                            deadMod.DeadZoneX = tempPadAction.deadMod.DeadZoneX;
+                            break;
+                        case PropertyKeyStrings.DEAD_ZONE_Y:
+                            deadMod.DeadZoneY = tempPadAction.deadMod.DeadZoneY;
+                            break;
                         case PropertyKeyStrings.MAX_ZONE:
                             deadMod.MaxZone = tempPadAction.deadMod.MaxZone;
                             break;
@@ -1464,7 +1543,8 @@ namespace DS4MapperTest.StickActions
                         case PropertyKeyStrings.PAD_DIR_UP:
                             {
                                 int tempDir = (int)DpadDirections.Up;
-                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                                    (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1472,7 +1552,8 @@ namespace DS4MapperTest.StickActions
                         case PropertyKeyStrings.PAD_DIR_DOWN:
                             {
                                 int tempDir = (int)DpadDirections.Down;
-                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                                    (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1480,7 +1561,8 @@ namespace DS4MapperTest.StickActions
                         case PropertyKeyStrings.PAD_DIR_LEFT:
                             {
                                 int tempDir = (int)DpadDirections.Left;
-                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                                    (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1488,7 +1570,8 @@ namespace DS4MapperTest.StickActions
                         case PropertyKeyStrings.PAD_DIR_RIGHT:
                             {
                                 int tempDir = (int)DpadDirections.Right;
-                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                                    (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1496,7 +1579,8 @@ namespace DS4MapperTest.StickActions
                         case PropertyKeyStrings.PAD_DIR_UPLEFT:
                             {
                                 int tempDir = (int)DpadDirections.UpLeft;
-                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                                    (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1504,7 +1588,8 @@ namespace DS4MapperTest.StickActions
                         case PropertyKeyStrings.PAD_DIR_UPRIGHT:
                             {
                                 int tempDir = (int)DpadDirections.UpRight;
-                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                                    (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1512,7 +1597,8 @@ namespace DS4MapperTest.StickActions
                         case PropertyKeyStrings.PAD_DIR_DOWNLEFT:
                             {
                                 int tempDir = (int)DpadDirections.DownLeft;
-                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                                    (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
@@ -1520,13 +1606,15 @@ namespace DS4MapperTest.StickActions
                         case PropertyKeyStrings.PAD_DIR_DOWNRIGHT:
                             {
                                 int tempDir = (int)DpadDirections.DownRight;
-                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                                eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                                    (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                                 useParentDataDraft2[tempDir] = true;
                             }
 
                             break;
                         case PropertyKeyStrings.OUTER_RING_BUTTON:
-                            ringButton = tempPadAction.ringButton;
+                            ringButton = tempPadAction.ringButton != null ?
+                                (AxisDirButton)tempPadAction.ringButton.DuplicateAction() : null;
                             useParentRingButton = true;
                             break;
                         case PropertyKeyStrings.USE_OUTER_RING:
@@ -1546,6 +1634,51 @@ namespace DS4MapperTest.StickActions
                             break;
                         case PropertyKeyStrings.DEAD_ZONE_TYPE:
                             deadMod.DeadZoneType = tempPadAction.deadMod.DeadZoneType;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED:
+                            counterMovementReleasePress.Enabled = tempPadAction.counterMovementReleasePress.Enabled;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_USE_ARROW_KEYS:
+                            counterMovementReleasePress.UseArrowKeysForCounterMovementPresses = tempPadAction.counterMovementReleasePress.UseArrowKeysForCounterMovementPresses;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET:
+                            counterMovementReleasePress.TapLengthPreset = tempPadAction.counterMovementReleasePress.TapLengthPreset;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MODE:
+                            counterMovementReleasePress.OppositeTapLengthMode = tempPadAction.counterMovementReleasePress.OppositeTapLengthMode;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_FIXED_MS:
+                            counterMovementReleasePress.OppositeTapLengthMs = tempPadAction.counterMovementReleasePress.OppositeTapLengthMs;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_VARIANCE_PERCENT:
+                            counterMovementReleasePress.OppositeTapLengthVariancePercent = tempPadAction.counterMovementReleasePress.OppositeTapLengthVariancePercent;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS:
+                            counterMovementReleasePress.OppositeTapLengthMinimumMs = tempPadAction.counterMovementReleasePress.OppositeTapLengthMinimumMs;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS:
+                            counterMovementReleasePress.OppositeTapLengthMaximumMs = tempPadAction.counterMovementReleasePress.OppositeTapLengthMaximumMs;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE:
+                            counterMovementReleasePress.OppositeTapStartDelayMode = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMode;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS:
+                            counterMovementReleasePress.OppositeTapStartDelayMs = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMs;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT:
+                            counterMovementReleasePress.OppositeTapStartDelayVariancePercent = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayVariancePercent;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS:
+                            counterMovementReleasePress.OppositeTapStartDelayMinimumMs = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMinimumMs;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS:
+                            counterMovementReleasePress.OppositeTapStartDelayMaximumMs = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMaximumMs;
+                            break;
+                        case PropertyKeyStrings.COUNTER_MOVEMENT_MIN_HOLD_MS:
+                            counterMovementReleasePress.MinimumHoldMs = tempPadAction.counterMovementReleasePress.MinimumHoldMs;
+                            break;
+                        case PropertyKeyStrings.REQUIRED_STICK_DEFLECTION_THRESHOLD:
+                            counterMovementReleasePress.ArmingThreshold = tempPadAction.counterMovementReleasePress.ArmingThreshold;
                             break;
                         default:
                             break;
@@ -1592,6 +1725,15 @@ namespace DS4MapperTest.StickActions
                 case PropertyKeyStrings.DEAD_ZONE:
                     deadMod.DeadZone = tempPadAction.deadMod.DeadZone;
                     break;
+                case PropertyKeyStrings.SEPARATE_AXIS_DEAD_ZONES:
+                    deadMod.SeparateAxisDeadZones = tempPadAction.deadMod.SeparateAxisDeadZones;
+                    break;
+                case PropertyKeyStrings.DEAD_ZONE_X:
+                    deadMod.DeadZoneX = tempPadAction.deadMod.DeadZoneX;
+                    break;
+                case PropertyKeyStrings.DEAD_ZONE_Y:
+                    deadMod.DeadZoneY = tempPadAction.deadMod.DeadZoneY;
+                    break;
                 case PropertyKeyStrings.MAX_ZONE:
                     deadMod.MaxZone = tempPadAction.deadMod.MaxZone;
                     break;
@@ -1601,7 +1743,8 @@ namespace DS4MapperTest.StickActions
                 case PropertyKeyStrings.PAD_DIR_UP:
                     {
                         int tempDir = (int)DpadDirections.Up;
-                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                            (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1609,7 +1752,8 @@ namespace DS4MapperTest.StickActions
                 case PropertyKeyStrings.PAD_DIR_DOWN:
                     {
                         int tempDir = (int)DpadDirections.Down;
-                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                            (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1617,7 +1761,8 @@ namespace DS4MapperTest.StickActions
                 case PropertyKeyStrings.PAD_DIR_LEFT:
                     {
                         int tempDir = (int)DpadDirections.Left;
-                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                            (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1625,7 +1770,8 @@ namespace DS4MapperTest.StickActions
                 case PropertyKeyStrings.PAD_DIR_RIGHT:
                     {
                         int tempDir = (int)DpadDirections.Right;
-                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                            (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1633,7 +1779,8 @@ namespace DS4MapperTest.StickActions
                 case PropertyKeyStrings.PAD_DIR_UPLEFT:
                     {
                         int tempDir = (int)DpadDirections.UpLeft;
-                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                            (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1641,7 +1788,8 @@ namespace DS4MapperTest.StickActions
                 case PropertyKeyStrings.PAD_DIR_UPRIGHT:
                     {
                         int tempDir = (int)DpadDirections.UpRight;
-                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                            (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1649,7 +1797,8 @@ namespace DS4MapperTest.StickActions
                 case PropertyKeyStrings.PAD_DIR_DOWNLEFT:
                     {
                         int tempDir = (int)DpadDirections.DownLeft;
-                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                            (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
@@ -1657,13 +1806,15 @@ namespace DS4MapperTest.StickActions
                 case PropertyKeyStrings.PAD_DIR_DOWNRIGHT:
                     {
                         int tempDir = (int)DpadDirections.DownRight;
-                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir];
+                        eventCodes4[tempDir] = tempPadAction.eventCodes4[tempDir] != null ?
+                            (AxisDirButton)tempPadAction.eventCodes4[tempDir].DuplicateAction() : null;
                         useParentDataDraft2[tempDir] = true;
                     }
 
                     break;
                 case PropertyKeyStrings.OUTER_RING_BUTTON:
-                    ringButton = tempPadAction.ringButton;
+                    ringButton = tempPadAction.ringButton != null ?
+                        (AxisDirButton)tempPadAction.ringButton.DuplicateAction() : null;
                     useParentRingButton = true;
                     break;
                 case PropertyKeyStrings.USE_OUTER_RING:
@@ -1683,6 +1834,42 @@ namespace DS4MapperTest.StickActions
                     break;
                 case PropertyKeyStrings.DEAD_ZONE_TYPE:
                     deadMod.DeadZoneType = tempPadAction.deadMod.DeadZoneType;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_ENABLED:
+                    counterMovementReleasePress.Enabled = tempPadAction.counterMovementReleasePress.Enabled;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_USE_ARROW_KEYS:
+                    counterMovementReleasePress.UseArrowKeysForCounterMovementPresses = tempPadAction.counterMovementReleasePress.UseArrowKeysForCounterMovementPresses;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_PRESET:
+                    counterMovementReleasePress.TapLengthPreset = tempPadAction.counterMovementReleasePress.TapLengthPreset;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MIN_MS:
+                    counterMovementReleasePress.OppositeTapLengthMinimumMs = tempPadAction.counterMovementReleasePress.OppositeTapLengthMinimumMs;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_TAP_LENGTH_MAX_MS:
+                    counterMovementReleasePress.OppositeTapLengthMaximumMs = tempPadAction.counterMovementReleasePress.OppositeTapLengthMaximumMs;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MODE:
+                    counterMovementReleasePress.OppositeTapStartDelayMode = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMode;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_FIXED_MS:
+                    counterMovementReleasePress.OppositeTapStartDelayMs = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMs;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_VARIANCE_PERCENT:
+                    counterMovementReleasePress.OppositeTapStartDelayVariancePercent = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayVariancePercent;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MIN_MS:
+                    counterMovementReleasePress.OppositeTapStartDelayMinimumMs = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMinimumMs;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_START_DELAY_MAX_MS:
+                    counterMovementReleasePress.OppositeTapStartDelayMaximumMs = tempPadAction.counterMovementReleasePress.OppositeTapStartDelayMaximumMs;
+                    break;
+                case PropertyKeyStrings.COUNTER_MOVEMENT_MIN_HOLD_MS:
+                    counterMovementReleasePress.MinimumHoldMs = tempPadAction.counterMovementReleasePress.MinimumHoldMs;
+                    break;
+                case PropertyKeyStrings.REQUIRED_STICK_DEFLECTION_THRESHOLD:
+                    counterMovementReleasePress.ArmingThreshold = tempPadAction.counterMovementReleasePress.ArmingThreshold;
                     break;
                 default:
                     break;

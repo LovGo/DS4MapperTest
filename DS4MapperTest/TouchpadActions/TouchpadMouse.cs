@@ -6,6 +6,8 @@ using System.Text;
 using System.Threading.Tasks;
 using Sensorit.Base;
 //using System.Diagnostics;
+using DS4MapperTest.Common;
+using DS4MapperTest.GyroActions;
 using DS4MapperTest.StickModifiers;
 
 namespace DS4MapperTest.TouchpadActions
@@ -16,23 +18,64 @@ namespace DS4MapperTest.TouchpadActions
         {
             public const string NAME = "Name";
             public const string DEAD_ZONE = "DeadZone";
+            public const string VERTICAL_DEAD_ZONE = "VerticalDeadZone";
+            public const string ANGLE_SNAP_DEGREES = "AngleSnapDegrees";
+            public const string SMOOTH_ANGLE_SNAP = "SmoothAngleSnap";
             public const string TRACKBALL_MODE = "Trackball";
             public const string TRACKBALL_FRICTION = "TrackballFriction";
-            public const string SENSITIVITY = "Sensitivity";
+            public const string SWIPES_PER_360 = "SwipesPer360";
             public const string VERTICAL_SCALE = "VerticalScale";
             public const string SMOOTHING_ENABLED = "SmoothingEnabled";
             public const string SMOOTHING_FILTER = "SmoothingFilter";
+            public const string ACCEL_CURVE = "AccelCurve";
+            public const string MIN_ACCEL_X_SENS = "MinAccelXSens";
+            public const string MAX_ACCEL_X_SENS = "MaxAccelXSens";
+            public const string MIN_ACCEL_Y_SENS = "MinAccelYSens";
+            public const string MAX_ACCEL_Y_SENS = "MaxAccelYSens";
+            public const string MIN_ACCEL_THRESHOLD = "MinAccelThreshold";
+            public const string MAX_ACCEL_THRESHOLD = "MaxAccelThreshold";
+            public const string POWER_CURVE_VREF = "PowerCurveVRef";
+            public const string POWER_CURVE_EXPONENT = "PowerCurveExponent";
+            public const string NATURAL_CURVE_VHALF = "NaturalCurveVHalf";
+            public const string STABILITY_MODE = "StabilityMode";
+            public const string STABILITY_TOUCH_SETTLE = "StabilityTouchSettle";
+            public const string STABILITY_NOISE = "StabilityNoise";
+            public const string STABILITY_EDGE_GUARD = "StabilityEdgeGuard";
+            public const string STABILITY_EDGE_START_GATE = "StabilityEdgeStartGate";
+            public const string STABILITY_STATIONARY = "StabilityStationary";
+            public const string STABILITY_DELTA_CLAMP = "StabilityDeltaClamp";
         }
 
         private HashSet<string> fullPropertySet = new HashSet<string>()
         {
             PropertyKeyStrings.NAME,
             PropertyKeyStrings.DEAD_ZONE,
+            PropertyKeyStrings.VERTICAL_DEAD_ZONE,
+            PropertyKeyStrings.ANGLE_SNAP_DEGREES,
+            PropertyKeyStrings.SMOOTH_ANGLE_SNAP,
             PropertyKeyStrings.TRACKBALL_MODE,
             PropertyKeyStrings.TRACKBALL_FRICTION,
-            PropertyKeyStrings.SENSITIVITY,
+            PropertyKeyStrings.SWIPES_PER_360,
+            PropertyKeyStrings.VERTICAL_SCALE,
             PropertyKeyStrings.SMOOTHING_ENABLED,
             PropertyKeyStrings.SMOOTHING_FILTER,
+            PropertyKeyStrings.ACCEL_CURVE,
+            PropertyKeyStrings.MIN_ACCEL_X_SENS,
+            PropertyKeyStrings.MAX_ACCEL_X_SENS,
+            PropertyKeyStrings.MIN_ACCEL_Y_SENS,
+            PropertyKeyStrings.MAX_ACCEL_Y_SENS,
+            PropertyKeyStrings.MIN_ACCEL_THRESHOLD,
+            PropertyKeyStrings.MAX_ACCEL_THRESHOLD,
+            PropertyKeyStrings.POWER_CURVE_VREF,
+            PropertyKeyStrings.POWER_CURVE_EXPONENT,
+            PropertyKeyStrings.NATURAL_CURVE_VHALF,
+            PropertyKeyStrings.STABILITY_MODE,
+            PropertyKeyStrings.STABILITY_TOUCH_SETTLE,
+            PropertyKeyStrings.STABILITY_NOISE,
+            PropertyKeyStrings.STABILITY_EDGE_GUARD,
+            PropertyKeyStrings.STABILITY_EDGE_START_GATE,
+            PropertyKeyStrings.STABILITY_STATIONARY,
+            PropertyKeyStrings.STABILITY_DELTA_CLAMP,
         };
 
         public const string ACTION_TYPE_NAME = "TouchMouseAction";
@@ -48,6 +91,28 @@ namespace DS4MapperTest.TouchpadActions
             set => deadZone = value;
         }
 
+        private int verticalDeadZone = DEFAULT_VERTICAL_DEAD_ZONE;
+        public int VerticalDeadZone
+        {
+            get => verticalDeadZone;
+            set => verticalDeadZone = value;
+        }
+
+        private double trackpadAngleSnapDegrees;
+        public double TrackpadAngleSnapDegrees
+        {
+            get => trackpadAngleSnapDegrees;
+            set => trackpadAngleSnapDegrees = Math.Clamp(value,
+                AngleSnapping.MinDegrees, AngleSnapping.MaxDegrees);
+        }
+
+        private bool trackpadSmoothAngleSnap;
+        public bool TrackpadSmoothAngleSnap
+        {
+            get => trackpadSmoothAngleSnap;
+            set => trackpadSmoothAngleSnap = value;
+        }
+
         private const int TRACKBALL_INIT_FRICTION = 10;
         private const int TRACKBALL_JOY_FRICTION = 7;
         private const int TRACKBALL_MASS = 45;
@@ -61,11 +126,34 @@ namespace DS4MapperTest.TouchpadActions
         private double TRACKBALL_SCALE = 0.000023;
         private const int TRACKBALL_BUFFER_LEN = 8;
 
-        //private const int DEFAULT_DEADZONE = 8;
         private const int DEFAULT_DEADZONE = 0;
-        private const double DEFAULT_SENSITIVITY = 1.0;
-        private const double DEFAULT_VERTICAL_SCALE = 1.0;
-        private const bool DEFAULT_SMOOTHING_ENABLED = true;
+        private const int DEFAULT_VERTICAL_DEAD_ZONE = 0;
+        public const double DEFAULT_SWIPES_PER_360 = 1.0;
+        public const double DEFAULT_VERTICAL_SCALE = 1.0;
+        private const bool DEFAULT_SMOOTHING_ENABLED = false;
+        public const GyroMouseAccelCurveChoice DEFAULT_ACCEL_CURVE =
+            GyroMouseAccelCurveChoice.None;
+        public const double DEFAULT_MIN_ACCEL_SENS = DEFAULT_SWIPES_PER_360;
+        public const double DEFAULT_MAX_ACCEL_SENS = 3.0;
+        public const double DEFAULT_MIN_ACCEL_THRESHOLD = 0.0;
+        public const double DEFAULT_MAX_ACCEL_THRESHOLD = 40.0;
+        public const double DEFAULT_NATURAL_VHALF = 20.0;
+        public const double DEFAULT_POWER_VREF = 10.0;
+        public const double DEFAULT_POWER_EXPONENT = 1.0;
+
+        public GyroMouseAccelCurveChoice AccelCurve { get; set; } =
+            DEFAULT_ACCEL_CURVE;
+        public double MinAccelXSens { get; set; } = DEFAULT_MIN_ACCEL_SENS;
+        public double MaxAccelXSens { get; set; } = DEFAULT_MAX_ACCEL_SENS;
+        public double MinAccelYSens { get; set; } = DEFAULT_MIN_ACCEL_SENS;
+        public double MaxAccelYSens { get; set; } = DEFAULT_MAX_ACCEL_SENS;
+        public double MinAccelThreshold { get; set; } =
+            DEFAULT_MIN_ACCEL_THRESHOLD;
+        public double MaxAccelThreshold { get; set; } =
+            DEFAULT_MAX_ACCEL_THRESHOLD;
+        public double NaturalVHalf { get; set; } = DEFAULT_NATURAL_VHALF;
+        public double PowerVRef { get; set; } = DEFAULT_POWER_VREF;
+        public double PowerExponent { get; set; } = DEFAULT_POWER_EXPONENT;
 
         private class TrackballVelData
         {
@@ -149,13 +237,18 @@ namespace DS4MapperTest.TouchpadActions
             get => ref smoothingFilterSettings;
         }
 
-        private bool trackballEnabled = true;
+        private bool trackballEnabled = false;
         public bool TrackballEnabled
         {
             get => trackballEnabled;
             set
             {
                 trackballEnabled = value;
+                if (!value)
+                {
+                    // Purge any in-flight spin so it cannot resume if trackball is re-enabled
+                    trackData.PurgeData();
+                }
                 CalcTrackAccel();
             }
         }
@@ -172,11 +265,11 @@ namespace DS4MapperTest.TouchpadActions
             }
         }
 
-        private double sensitivity = DEFAULT_SENSITIVITY;
-        public double Sensitivity
+        private double swipesPer360 = DEFAULT_SWIPES_PER_360;
+        public double SwipesPer360
         {
-            get => sensitivity;
-            set => sensitivity = value;
+            get => swipesPer360;
+            set => swipesPer360 = value;
         }
 
         private double verticalScale = DEFAULT_VERTICAL_SCALE;
@@ -190,10 +283,19 @@ namespace DS4MapperTest.TouchpadActions
 
         private bool useParentSmoothingFilter;
 
+        // Settings follow profile/layer inheritance. The filter instance
+        // holds runtime state and is private to this action
+        private TouchpadStabilitySettings stabilitySettings =
+            new TouchpadStabilitySettings();
+        public TouchpadStabilitySettings StabilitySettings => stabilitySettings;
+
+        private TouchpadStabilityFilter stabilityFilter;
+
         public TouchpadMouse()
         {
             actionTypeName = ACTION_TYPE_NAME;
             trackData = new TrackballVelData();
+            stabilityFilter = new TouchpadStabilityFilter(stabilitySettings);
             smoothingFilterSettings.Init();
             smoothingEnabled = DEFAULT_SMOOTHING_ENABLED;
             //trackData.trackballAccel = TRACKBALL_RADIUS * TRACKBALL_JOY_FRICTION / TRACKBALL_INERTIA;
@@ -214,6 +316,21 @@ namespace DS4MapperTest.TouchpadActions
                 return;
             }
 
+            if (stabilityFilter.Enabled)
+            {
+                ref TouchEventFrame previousFrame =
+                    ref mapper.GetPreviousTouchEventFrame(touchpadDefinition.touchCode);
+
+                if (touchFrame.Touch && !previousFrame.Touch)
+                {
+                    stabilityFilter.OnTouchStart(ref touchFrame, touchpadDefinition);
+                }
+                else if (!touchFrame.Touch && previousFrame.Touch)
+                {
+                    stabilityFilter.OnTouchEnd();
+                }
+            }
+
             if (trackballEnabled)
             {
                 TrackballMouseProcess(mapper, ref touchFrame);
@@ -228,6 +345,12 @@ namespace DS4MapperTest.TouchpadActions
                     // Process normal mouse
                     ProcessTouchMouse(mapper, ref touchFrame, ref previousTouchFrame);
                 }
+            }
+            else
+            {
+                // Trackball disabled and finger not touching — stop all motion immediately
+                xNorm = yNorm = 0.0;
+                xMotion = yMotion = 0.0;
             }
 
             if (xMotion != 0.0 || yMotion != 0.0)
@@ -258,16 +381,16 @@ namespace DS4MapperTest.TouchpadActions
                     mapper.GenerateMouseEventFilteredV2(smoothingFilterSettings.filterX,
                         smoothingFilterSettings.filterY,
                         ref xMotion, ref yMotion);
-                    mapper.MouseSync = true;
+                    mapper.SetRouteRelativeMouseSync(MouseOutputRoute.Trackpad, true);
                     //mapper.MouseEventFired = true;
                 }
                 else
                 {
                     // Allow mapper to handle event
-                    mapper.MouseSync = true;
+                    mapper.SetRouteRelativeMouseSync(MouseOutputRoute.Trackpad, true);
                 }
 
-                mapper.MouseX += xMotion; mapper.MouseY += yMotion;
+                mapper.AddRouteRelativeMouseMotion(MouseOutputRoute.Trackpad, xMotion, yMotion);
 
                 active = true;
             }
@@ -280,16 +403,16 @@ namespace DS4MapperTest.TouchpadActions
                     mapper.GenerateMouseEventFilteredV2(smoothingFilterSettings.filterX,
                         smoothingFilterSettings.filterY,
                         ref xMotion, ref yMotion);
-                    mapper.MouseSync = true;
+                    mapper.SetRouteRelativeMouseSync(MouseOutputRoute.Trackpad, true);
                     //mapper.MouseEventFired = true;
                 }
                 else
                 {
                     // Allow mapper to handle event
-                    mapper.MouseSync = true;
+                    mapper.SetRouteRelativeMouseSync(MouseOutputRoute.Trackpad, true);
                 }
 
-                mapper.MouseX += xMotion; mapper.MouseY += yMotion;
+                mapper.AddRouteRelativeMouseMotion(MouseOutputRoute.Trackpad, xMotion, yMotion);
 
                 //mapper.MouseX = xMotion; mapper.MouseY = yMotion;
                 //mapper.MouseXRemainder = mapper.MouseYRemainder = 0.0;
@@ -304,6 +427,7 @@ namespace DS4MapperTest.TouchpadActions
             xMotion = yMotion = 0.0;
 
             PurgeTrackballData();
+            stabilityFilter.Reset();
             smoothingFilterSettings.filterX.Reset();
             smoothingFilterSettings.filterY.Reset();
 
@@ -333,6 +457,9 @@ namespace DS4MapperTest.TouchpadActions
                 smoothingFilterSettings.filterX.Reset();
                 smoothingFilterSettings.filterY.Reset();
             }
+
+            // Runtime filter state is never shared between actions
+            stabilityFilter.Reset();
         }
 
         private void PurgeTrackballData()
@@ -430,8 +557,21 @@ namespace DS4MapperTest.TouchpadActions
         private void ProcessTouchMouse(Mapper mapper, ref TouchEventFrame touchFrame,
             ref TouchEventFrame previousFrame)
         {
-            int dx = touchFrame.X - previousFrame.X;
-            int dy = -(touchFrame.Y - previousFrame.Y);
+            int dx;
+            int dy;
+            if (stabilityFilter.Enabled)
+            {
+                // Filter raw coordinates before the deltas reach the
+                // trackball buffer and the output pipeline
+                stabilityFilter.Filter(ref touchFrame, ref previousFrame,
+                    touchpadDefinition, out dx, out int dyPad);
+                dy = -dyPad;
+            }
+            else
+            {
+                dx = touchFrame.X - previousFrame.X;
+                dy = -(touchFrame.Y - previousFrame.Y);
+            }
             //int rawDeltaX = dx, rawDeltaY = dy;
 
             //Console.WriteLine("DELTA X: {0} Y: {1}", dx, dy);
@@ -467,15 +607,11 @@ namespace DS4MapperTest.TouchpadActions
             double timeElapsed = touchFrame.timeElapsed;
             double oldTimeElapsed = timeElapsed;
             timeElapsed = timeElapsed - (mapper.remainderCutoff(timeElapsed * 10000.0, 1.0) / 10000.0);
-            //double coefficient = TOUCHPAD_COEFFICIENT;
-            double coefficient = touchpadDefinition.mouseScale;
-
-            // Static. 11 RWC / 1.0 In-Game Sens.
-            // Shadow Warrior (2013)
-            //double coefficient = (11.0 / 1.0);
-            if (sensitivity != DEFAULT_SENSITIVITY)
+            double padWidth = touchpadDefinition.xAxis.max - (double)touchpadDefinition.xAxis.min;
+            double coefficient = mapper.ActionProfile.CalibCounts / padWidth;
+            if (AccelCurve == GyroMouseAccelCurveChoice.None)
             {
-                coefficient = coefficient * sensitivity;
+                coefficient *= swipesPer360;
             }
 
             //double offset = TOUCHPAD_MOUSE_OFFSET;
@@ -505,11 +641,29 @@ namespace DS4MapperTest.TouchpadActions
                 dy = 0;
             }
 
-            double finalCoefficient = coefficient;
+            if (verticalDeadZone > 0 && Math.Abs(dy) < verticalDeadZone) dy = 0;
+
+            double movementX = dx;
+            double movementY = dy;
+            AngleSnapping.Apply(ref movementX, ref movementY,
+                trackpadAngleSnapDegrees, trackpadSmoothAngleSnap);
+
+            double snappedMagnitude = Math.Sqrt((movementX * movementX) +
+                (movementY * movementY));
+            if (snappedMagnitude > 0.0)
+            {
+                normX = Math.Abs(movementX) / snappedMagnitude;
+                normY = Math.Abs(movementY) / snappedMagnitude;
+                signX = Math.Sign(movementX);
+                signY = Math.Sign(movementY);
+            }
+
+            double finalCoefficientX = coefficient;
+            double finalCoefficientY = coefficient;
             if (touchpadDefinition.throttleRelMouse)
             {
                 double sensMulti = 1.0;
-                double distSquared = (dx * dx) + (dy * dy);
+                double distSquared = (movementX * movementX) + (movementY * movementY);
                 //Trace.WriteLine($"{Math.Sqrt(distSquared)}");
                 double testThreshold = touchpadDefinition.throttleRelMouseZone;
                 double testSquared = testThreshold * testThreshold;
@@ -547,21 +701,47 @@ namespace DS4MapperTest.TouchpadActions
                     sensMulti = Math.Clamp(sensMulti, 0.0, 1.0);
                     //Trace.WriteLine($"{baconator} {ratio} {alpha} {-x} {Math.Exp(-x)}");
 
-                    finalCoefficient = coefficient * sensMulti;
+                    finalCoefficientX = finalCoefficientY =
+                        coefficient * sensMulti;
                 }
             }
 
-            double fakeXAng = (double)dx / (65535.0 / 360.0);
-            double fakeYAng = (double)dy / (65535.0 / 360.0);
+            if (AccelCurve != GyroMouseAccelCurveChoice.None)
+            {
+                double baseXSensitivity = Math.Clamp(
+                    swipesPer360, 0.0, 100.0);
+                double baseYSensitivity = Math.Clamp(
+                    swipesPer360 * verticalScale, 0.0, 100.0);
+                MouseAcceleration.CalculateMultipliers(
+                    AccelCurve,
+                    snappedMagnitude,
+                    MinAccelThreshold,
+                    MaxAccelThreshold,
+                    baseXSensitivity,
+                    MaxAccelXSens,
+                    baseYSensitivity,
+                    MaxAccelYSens,
+                    PowerVRef,
+                    PowerExponent,
+                    NaturalVHalf,
+                    out double accelMultiplierX,
+                    out double accelMultiplierY);
+                finalCoefficientX *= accelMultiplierX;
+                finalCoefficientY *= accelMultiplierY;
+            }
+
+            double fakeXAng = movementX / (65535.0 / 360.0);
+            double fakeYAng = movementY / (65535.0 / 360.0);
 
             //Trace.WriteLine($"DX {dx} {fakeXAng}");
 
-            double xMotion = dx != 0 ? finalCoefficient * (dx * tempDouble)
+            double xMotion = movementX != 0 ? finalCoefficientX * (movementX * tempDouble)
                 + (normX * (offset * signX)) : 0;
 
-            double yMotion = dy != 0 ? finalCoefficient * (dy * tempDouble)
+            double yMotion = movementY != 0 ? finalCoefficientY * (movementY * tempDouble)
                 + (normY * (offset * signY)) : 0;
-            if (verticalScale != DEFAULT_VERTICAL_SCALE)
+            if (AccelCurve == GyroMouseAccelCurveChoice.None &&
+                verticalScale != DEFAULT_VERTICAL_SCALE)
             {
                 yMotion *= verticalScale;
             }
@@ -653,6 +833,15 @@ namespace DS4MapperTest.TouchpadActions
                         case PropertyKeyStrings.DEAD_ZONE:
                             deadZone = tempMouseAction.deadZone;
                             break;
+                        case PropertyKeyStrings.VERTICAL_DEAD_ZONE:
+                            verticalDeadZone = tempMouseAction.verticalDeadZone;
+                            break;
+                        case PropertyKeyStrings.ANGLE_SNAP_DEGREES:
+                            trackpadAngleSnapDegrees = tempMouseAction.trackpadAngleSnapDegrees;
+                            break;
+                        case PropertyKeyStrings.SMOOTH_ANGLE_SNAP:
+                            trackpadSmoothAngleSnap = tempMouseAction.trackpadSmoothAngleSnap;
+                            break;
                         case PropertyKeyStrings.TRACKBALL_MODE:
                             trackballEnabled = tempMouseAction.trackballEnabled;
                             // Copy parent ref
@@ -663,8 +852,8 @@ namespace DS4MapperTest.TouchpadActions
                             useParentTrackFriction = true;
                             CalcTrackAccel();
                             break;
-                        case PropertyKeyStrings.SENSITIVITY:
-                            sensitivity = tempMouseAction.sensitivity;
+                        case PropertyKeyStrings.SWIPES_PER_360:
+                            swipesPer360 = tempMouseAction.swipesPer360;
                             break;
                         case PropertyKeyStrings.VERTICAL_SCALE:
                             verticalScale = tempMouseAction.verticalScale;
@@ -673,14 +862,60 @@ namespace DS4MapperTest.TouchpadActions
                             smoothingEnabled = tempMouseAction.smoothingEnabled;
                             break;
                         case PropertyKeyStrings.SMOOTHING_FILTER:
-                            smoothingFilterSettings = tempMouseAction.smoothingFilterSettings;
+                            smoothingFilterSettings.minCutOff = tempMouseAction.smoothingFilterSettings.minCutOff;
+                            smoothingFilterSettings.beta = tempMouseAction.smoothingFilterSettings.beta;
+                            smoothingFilterSettings.UpdateSmoothingFilters();
                             useParentSmoothingFilter = true;
+                            break;
+                        case PropertyKeyStrings.ACCEL_CURVE:
+                            AccelCurve = tempMouseAction.AccelCurve;
+                            break;
+                        case PropertyKeyStrings.MIN_ACCEL_X_SENS:
+                            MinAccelXSens = tempMouseAction.MinAccelXSens;
+                            break;
+                        case PropertyKeyStrings.MAX_ACCEL_X_SENS:
+                            MaxAccelXSens = tempMouseAction.MaxAccelXSens;
+                            break;
+                        case PropertyKeyStrings.MIN_ACCEL_Y_SENS:
+                            MinAccelYSens = tempMouseAction.MinAccelYSens;
+                            break;
+                        case PropertyKeyStrings.MAX_ACCEL_Y_SENS:
+                            MaxAccelYSens = tempMouseAction.MaxAccelYSens;
+                            break;
+                        case PropertyKeyStrings.MIN_ACCEL_THRESHOLD:
+                            MinAccelThreshold = tempMouseAction.MinAccelThreshold;
+                            break;
+                        case PropertyKeyStrings.MAX_ACCEL_THRESHOLD:
+                            MaxAccelThreshold = tempMouseAction.MaxAccelThreshold;
+                            break;
+                        case PropertyKeyStrings.POWER_CURVE_VREF:
+                            PowerVRef = tempMouseAction.PowerVRef;
+                            break;
+                        case PropertyKeyStrings.POWER_CURVE_EXPONENT:
+                            PowerExponent = tempMouseAction.PowerExponent;
+                            break;
+                        case PropertyKeyStrings.NATURAL_CURVE_VHALF:
+                            NaturalVHalf = tempMouseAction.NaturalVHalf;
+                            break;
+                        case PropertyKeyStrings.STABILITY_MODE:
+                        case PropertyKeyStrings.STABILITY_TOUCH_SETTLE:
+                        case PropertyKeyStrings.STABILITY_NOISE:
+                        case PropertyKeyStrings.STABILITY_EDGE_GUARD:
+                        case PropertyKeyStrings.STABILITY_EDGE_START_GATE:
+                        case PropertyKeyStrings.STABILITY_STATIONARY:
+                        case PropertyKeyStrings.STABILITY_DELTA_CLAMP:
+                            CopyStabilityGroupFromParent(tempMouseAction, parentPropType);
                             break;
                         default:
                             break;
                     }
                 }
             }
+        }
+
+        private void CopyStabilityGroupFromParent(TouchpadMouse parent, string propertyName)
+        {
+            stabilitySettings.CopyGroupFrom(parent.stabilitySettings, propertyName);
         }
 
         private void TempMouseAction_NotifyPropertyChanged(object sender, NotifyPropertyChangeArgs e)
@@ -690,8 +925,15 @@ namespace DS4MapperTest.TouchpadActions
 
         private void CalcTrackAccel()
         {
-            //trackData.trackballAccel = TRACKBALL_RADIUS * TRACKBALL_JOY_FRICTION / TRACKBALL_INERTIA;
-            trackData.trackballAccel = TRACKBALL_RADIUS * trackballFriction / TRACKBALL_INERTIA;
+            if (trackballFriction >= 100)
+            {
+                // Friction at ceiling — decay exceeds any realistic velocity in one tick
+                trackData.trackballAccel = 1e9;
+            }
+            else
+            {
+                trackData.trackballAccel = TRACKBALL_RADIUS * trackballFriction / TRACKBALL_INERTIA;
+            }
         }
 
         protected override void CascadePropertyChange(Mapper mapper, string propertyName)
@@ -717,6 +959,15 @@ namespace DS4MapperTest.TouchpadActions
                 case PropertyKeyStrings.DEAD_ZONE:
                     deadZone = tempMouseAction.deadZone;
                     break;
+                case PropertyKeyStrings.VERTICAL_DEAD_ZONE:
+                    verticalDeadZone = tempMouseAction.verticalDeadZone;
+                    break;
+                case PropertyKeyStrings.ANGLE_SNAP_DEGREES:
+                    trackpadAngleSnapDegrees = tempMouseAction.trackpadAngleSnapDegrees;
+                    break;
+                case PropertyKeyStrings.SMOOTH_ANGLE_SNAP:
+                    trackpadSmoothAngleSnap = tempMouseAction.trackpadSmoothAngleSnap;
+                    break;
                 case PropertyKeyStrings.TRACKBALL_MODE:
                     if (active)
                     {
@@ -737,8 +988,8 @@ namespace DS4MapperTest.TouchpadActions
                     useParentTrackFriction = true;
                     CalcTrackAccel();
                     break;
-                case PropertyKeyStrings.SENSITIVITY:
-                    sensitivity = tempMouseAction.sensitivity;
+                case PropertyKeyStrings.SWIPES_PER_360:
+                    swipesPer360 = tempMouseAction.swipesPer360;
                     break;
                 case PropertyKeyStrings.VERTICAL_SCALE:
                     verticalScale = tempMouseAction.verticalScale;
@@ -747,8 +998,50 @@ namespace DS4MapperTest.TouchpadActions
                     smoothingEnabled = tempMouseAction.smoothingEnabled;
                     break;
                 case PropertyKeyStrings.SMOOTHING_FILTER:
-                    smoothingFilterSettings = tempMouseAction.smoothingFilterSettings;
+                    smoothingFilterSettings.minCutOff = tempMouseAction.smoothingFilterSettings.minCutOff;
+                    smoothingFilterSettings.beta = tempMouseAction.smoothingFilterSettings.beta;
+                    smoothingFilterSettings.UpdateSmoothingFilters();
                     useParentSmoothingFilter = true;
+                    break;
+                case PropertyKeyStrings.ACCEL_CURVE:
+                    AccelCurve = tempMouseAction.AccelCurve;
+                    break;
+                case PropertyKeyStrings.MIN_ACCEL_X_SENS:
+                    MinAccelXSens = tempMouseAction.MinAccelXSens;
+                    break;
+                case PropertyKeyStrings.MAX_ACCEL_X_SENS:
+                    MaxAccelXSens = tempMouseAction.MaxAccelXSens;
+                    break;
+                case PropertyKeyStrings.MIN_ACCEL_Y_SENS:
+                    MinAccelYSens = tempMouseAction.MinAccelYSens;
+                    break;
+                case PropertyKeyStrings.MAX_ACCEL_Y_SENS:
+                    MaxAccelYSens = tempMouseAction.MaxAccelYSens;
+                    break;
+                case PropertyKeyStrings.MIN_ACCEL_THRESHOLD:
+                    MinAccelThreshold = tempMouseAction.MinAccelThreshold;
+                    break;
+                case PropertyKeyStrings.MAX_ACCEL_THRESHOLD:
+                    MaxAccelThreshold = tempMouseAction.MaxAccelThreshold;
+                    break;
+                case PropertyKeyStrings.POWER_CURVE_VREF:
+                    PowerVRef = tempMouseAction.PowerVRef;
+                    break;
+                case PropertyKeyStrings.POWER_CURVE_EXPONENT:
+                    PowerExponent = tempMouseAction.PowerExponent;
+                    break;
+                case PropertyKeyStrings.NATURAL_CURVE_VHALF:
+                    NaturalVHalf = tempMouseAction.NaturalVHalf;
+                    break;
+                case PropertyKeyStrings.STABILITY_MODE:
+                case PropertyKeyStrings.STABILITY_TOUCH_SETTLE:
+                case PropertyKeyStrings.STABILITY_NOISE:
+                case PropertyKeyStrings.STABILITY_EDGE_GUARD:
+                case PropertyKeyStrings.STABILITY_EDGE_START_GATE:
+                case PropertyKeyStrings.STABILITY_STATIONARY:
+                case PropertyKeyStrings.STABILITY_DELTA_CLAMP:
+                    CopyStabilityGroupFromParent(tempMouseAction, propertyName);
+                    stabilityFilter.Reset();
                     break;
                 default:
                     break;

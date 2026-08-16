@@ -6,11 +6,19 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using DS4MapperTest.ButtonActions;
+using DS4MapperTest.Common;
+using DS4MapperTest.GyroActions;
 using static DS4MapperTest.Mapper;
 using DS4MapperTest.DS4Library;
 
 namespace DS4MapperTest
 {
+    public enum CalibMode
+    {
+        RwcMode,
+        CountsMode,
+    }
+
     public class Profile
     {
         protected List<ActionSet> actionSets = new List<ActionSet>(8);
@@ -40,9 +48,6 @@ namespace DS4MapperTest
 
         protected string description;
         public string Description { get => description; set => description = value; }
-
-        protected string creator;
-        public string Creator { get => creator; set => creator = value; }
 
         protected DateTime creationDate;
         public DateTime CreationDate { get => creationDate; set => creationDate = value; }
@@ -75,6 +80,76 @@ namespace DS4MapperTest
             get => lightbarSettings;
             set => lightbarSettings = value;
         }
+
+        // Default calibration matches the VALORANT preset at an In-Game
+        // Sensitivity of 1.0, so a brand-new profile shows that preset selected
+        // with no further setup needed (see GameCalibPreset.Valorant).
+        private double calibRwc = GameCalibPreset.Valorant.RWC;
+        public double CalibRwc
+        {
+            get => calibRwc;
+            set
+            {
+                if (calibRwc == value) return;
+                calibRwc = value;
+                CalibRwcChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        public event EventHandler CalibRwcChanged;
+
+        private double calibInGameSens = 1.0;
+        public double CalibInGameSens
+        {
+            get => calibInGameSens;
+            set
+            {
+                if (calibInGameSens == value) return;
+                calibInGameSens = value;
+                CalibInGameSensChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        public event EventHandler CalibInGameSensChanged;
+
+        private double calibCounts = GameCalibPreset.Valorant.RWC * 360.0;
+        public double CalibCounts
+        {
+            get => calibCounts;
+            set
+            {
+                if (calibCounts == value) return;
+                calibCounts = value;
+                CalibCountsChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        public event EventHandler CalibCountsChanged;
+
+        private CalibMode calibMode = CalibMode.CountsMode;
+        public CalibMode CalibMode
+        {
+            get => calibMode;
+            set
+            {
+                if (calibMode == value) return;
+                calibMode = value;
+                CalibModeChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        public event EventHandler CalibModeChanged;
+
+        private string calibPresetName = GameCalibPreset.Valorant.Name;
+        public string CalibPresetName
+        {
+            get => calibPresetName;
+            set
+            {
+                string next = GameCalibPreset.FindByName(value)?.Name ??
+                    GameCalibPreset.Custom.Name;
+                if (calibPresetName == next) return;
+                calibPresetName = next;
+                CalibPresetNameChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        public event EventHandler CalibPresetNameChanged;
 
         public bool dirty;
         public bool Dirty
@@ -152,8 +227,15 @@ namespace DS4MapperTest
         public OutputContType OutputGamepad
         {
             get => outputGamepad;
-            set => outputGamepad = value;
+            set
+            {
+                if (outputGamepad == value) return;
+                outputGamepad = value;
+                OutputGamepadChanged?.Invoke(this, EventArgs.Empty);
+            }
         }
+        public event EventHandler OutputGamepadChanged;
+
         public bool ShouldSerializeOutputGamepad()
         {
             return enabled;

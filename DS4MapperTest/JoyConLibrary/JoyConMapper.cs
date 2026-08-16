@@ -553,6 +553,14 @@ namespace DS4MapperTest.JoyConLibrary
                     bool runPrepareAction = (gyroAct.OnlyOnPrimary && currentDev);
                     //if (!gyroAct.OnlyOnPrimary || runPrepareAction)
                     {
+                        // PopulateStateGyro (and therefore motionGravity) is only ever
+                        // called from this Right JoyCon branch - the Left branch above
+                        // builds its GyroL frame and calls gyroAct.Prepare directly,
+                        // without going through PopulateStateGyro. That already
+                        // guarantees a single gyro source feeds gravity tracking,
+                        // mirroring JSM's IGNORE_LEFT default, so no reset-on-switch
+                        // call is needed: there is no live second source to switch away
+                        // from.
                         GyroEventFrame gyroFrame = new GyroEventFrame
                         {
                             GyroYaw = currentMapperState.MotionR.GyroYaw,
@@ -572,7 +580,8 @@ namespace DS4MapperTest.JoyConLibrary
                             elapsedReference = device.BaseElapsedReference,
                         };
 
-                        PopulateStateGyro(ref gyroFrame);
+                        if (gyroAct.OutputsNativeGyro) PopulateStateGyro(ref gyroFrame);
+                        else ClearStateGyro();
                         //if (currentDev || runPrepareAction)
                         {
                             gyroAct.Prepare(this, ref gyroFrame);
@@ -818,7 +827,9 @@ namespace DS4MapperTest.JoyConLibrary
             secondJoyDevice.Removal += SecondaryDeviceRemoval;
 
             if (actionProfile.OutputGamepadSettings.ForceFeedbackEnabled &&
-                outputControlType == OutputContType.Xbox360)// &&
+                (outputControlType == OutputContType.Xbox360 ||
+                outputControlType == OutputContType.DualSense ||
+                outputControlType == OutputContType.DualSenseEdge))// &&
                 //outputForceFeedbackSecondDel == null)
             {
                 EstablishSecondaryForceFeedback();
@@ -866,7 +877,9 @@ namespace DS4MapperTest.JoyConLibrary
                 }
 
                 if (actionProfile.OutputGamepadSettings.ForceFeedbackEnabled &&
-                    outputControlType == OutputContType.Xbox360)// &&
+                    (outputControlType == OutputContType.Xbox360 ||
+                    outputControlType == OutputContType.DualSense ||
+                    outputControlType == OutputContType.DualSenseEdge))// &&
                     //outputForceFeedbackSecondDel != null)
                 {
                     HookSecondaryFeedback();
@@ -915,6 +928,23 @@ namespace DS4MapperTest.JoyConLibrary
 
                 HookSecondaryFeedback();                
             }
+            else if (actionProfile.OutputGamepadSettings.ForceFeedbackEnabled &&
+                (outputControlType == OutputContType.DualSense ||
+                outputControlType == OutputContType.DualSenseEdge))
+            {
+                viiperDSFeedback = TestVIIPERDSFeedback;
+                bool result = LibVIIPER.SetDualSenseOutputCallback(deviceHandle, viiperDSFeedback);
+
+                HookSecondaryFeedback();
+            }
+            else if (actionProfile.OutputGamepadSettings.ForceFeedbackEnabled &&
+                outputControlType == OutputContType.SwitchPro2)
+            {
+                viiperNS2ProFeedback = TestVIIPERNS2ProFeedback;
+                bool result = LibVIIPER.SetNS2ProOutputCallback(deviceHandle, viiperNS2ProFeedback);
+
+                HookSecondaryFeedback();
+            }
         }
 
         public void TestVIIPER360Feedback(nuint handle, byte leftMotor, byte rightMotor)
@@ -932,6 +962,41 @@ namespace DS4MapperTest.JoyConLibrary
                     secondJoyDevice.rumbleDirty = true;
                 }
                 //secondJoyReader.WriteRumbleReport();
+            }
+        }
+
+        public void TestVIIPERDSFeedback(nuint handle, byte rumbleSmall, byte rumbleLarge,
+            byte ledRed, byte ledGreen, byte ledBlue, byte playerLeds)
+        {
+            device.currentLeftAmpRatio = rumbleLarge / 255.0;
+            device.currentRightAmpRatio = rumbleSmall / 255.0;
+            device.rumbleDirty = true;
+
+            if (secondJoyDevice != null)
+            {
+                secondJoyDevice.currentLeftAmpRatio = rumbleLarge / 255.0;
+                secondJoyDevice.currentRightAmpRatio = rumbleSmall / 255.0;
+                using (WriteLocker locker = new WriteLocker(secondJoyDevice.rumbleDataLock))
+                {
+                    secondJoyDevice.rumbleDirty = true;
+                }
+            }
+        }
+
+        public void TestVIIPERNS2ProFeedback(nuint handle, NS2ProOutputState output)
+        {
+            device.currentLeftAmpRatio = ApproximateNS2ProRumbleRatio(output, true);
+            device.currentRightAmpRatio = ApproximateNS2ProRumbleRatio(output, false);
+            device.rumbleDirty = true;
+
+            if (secondJoyDevice != null)
+            {
+                secondJoyDevice.currentLeftAmpRatio = device.currentLeftAmpRatio;
+                secondJoyDevice.currentRightAmpRatio = device.currentRightAmpRatio;
+                using (WriteLocker locker = new WriteLocker(secondJoyDevice.rumbleDataLock))
+                {
+                    secondJoyDevice.rumbleDirty = true;
+                }
             }
         }
 

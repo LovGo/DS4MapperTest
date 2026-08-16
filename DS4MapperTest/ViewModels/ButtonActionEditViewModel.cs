@@ -1,18 +1,24 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Collections.ObjectModel;
 using DS4MapperTest.ActionUtil;
 using DS4MapperTest.ButtonActions;
+using DS4MapperTest.GyroActions;
 using DS4MapperTest.MapperUtil;
+using DS4MapperTest.StickActions;
+using DS4MapperTest.TouchpadActions;
+using DS4MapperTest.Common;
 using System.Threading;
 
 namespace DS4MapperTest.ViewModels
 {
-    public class ButtonActionEditViewModel
+    public class ButtonActionEditViewModel : INotifyPropertyChanged
     {
+        public event PropertyChangedEventHandler PropertyChanged;
         public enum ActionComboBoxTypes
         {
             None,
@@ -23,12 +29,15 @@ namespace DS4MapperTest.ViewModels
             RelativeMouseDir,
             LayerOp,
             SetChange,
+            CameraTurn,
         }
 
         private Dictionary<JoypadActionCodes, int> gamepadIndexAliases;
         private Dictionary<int, JoypadActionCodes> revGamepadIndexAliases;
         private List<GamepadCodeItem> gamepadComboItems;
         public List<GamepadCodeItem> GamepadComboItems => gamepadComboItems;
+
+        public bool OutputControllerDisabled => !mapper.ActionProfile.OutputGamepadSettings.Enabled;
 
         private List<KeyboardCodeItem> keyboardComboItems;
         public List<KeyboardCodeItem> KeyboardComboItems => keyboardComboItems;
@@ -229,6 +238,7 @@ namespace DS4MapperTest.ViewModels
             {
                 selectedLayerOpsIndex = value;
                 SelectedLayerOpsIndexChanged?.Invoke(this, EventArgs.Empty);
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedLayerOpsIndex)));
             }
         }
         public event EventHandler SelectedLayerOpsIndexChanged;
@@ -241,6 +251,7 @@ namespace DS4MapperTest.ViewModels
             {
                 selectedLayerChoiceIndex = value;
                 SelectedLayerChoiceIndexChanged?.Invoke(this, EventArgs.Empty);
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedLayerChoiceIndex)));
             }
         }
         public event EventHandler SelectedLayerChoiceIndexChanged;
@@ -253,6 +264,7 @@ namespace DS4MapperTest.ViewModels
             {
                 showAvailableLayers = value;
                 ShowAvailableLayersChanged?.Invoke(this, EventArgs.Empty);
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowAvailableLayers)));
             }
         }
         public event EventHandler ShowAvailableLayersChanged;
@@ -266,6 +278,7 @@ namespace DS4MapperTest.ViewModels
                 if (showLayerChangeConditions == value) return;
                 showLayerChangeConditions = value;
                 ShowLayerChangeConditionsChanged?.Invoke(this, EventArgs.Empty);
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowLayerChangeConditions)));
             }
         }
         public event EventHandler ShowLayerChangeConditionsChanged;
@@ -278,6 +291,7 @@ namespace DS4MapperTest.ViewModels
             {
                 selectedLayerChangeConditionIndex = value;
                 SelectedLayerChangeConditionIndexChanged?.Invoke(this, EventArgs.Empty);
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedLayerChangeConditionIndex)));
             }
         }
         public event EventHandler SelectedLayerChangeConditionIndexChanged;
@@ -319,6 +333,302 @@ namespace DS4MapperTest.ViewModels
         }
         public event EventHandler SelectedSetChangeConditionIndexChanged;
 
+        // Camera Turn
+        private const double DEFAULT_CAMERA_TURN_ANGLE = 180.0;
+        private const double DEFAULT_CAMERA_TURN_DURATION_MS = 100.0;
+
+        private double cameraTurnAngle = DEFAULT_CAMERA_TURN_ANGLE;
+        public double CameraTurnAngle
+        {
+            get => cameraTurnAngle;
+            set { cameraTurnAngle = value; CameraTurnAngleChanged?.Invoke(this, EventArgs.Empty); }
+        }
+        public event EventHandler CameraTurnAngleChanged;
+
+        private double cameraTurnDurationMs = DEFAULT_CAMERA_TURN_DURATION_MS;
+        public double CameraTurnDurationMs
+        {
+            get => cameraTurnDurationMs;
+            set { cameraTurnDurationMs = value; CameraTurnDurationMsChanged?.Invoke(this, EventArgs.Empty); }
+        }
+        public event EventHandler CameraTurnDurationMsChanged;
+
+        private double cameraTurnCounts360 = 1800.0;
+        public double CameraTurnCounts360
+        {
+            get => cameraTurnCounts360;
+            set
+            {
+                if (cameraTurnCounts360 == value) return;
+                cameraTurnCounts360 = value;
+                // Counts is only ever the fixed master while in Counts mode; RWC is what's
+                // derived from it. In RWC mode this setter only runs as the result of RWC
+                // itself changing (see CalculateCameraTurnCountsFromRwc), so recomputing RWC
+                // back from the very Counts value that was just derived from it would be a
+                // no-op at best and fights the mode's actual master otherwise.
+                if (IsCountsMode) CalculateCameraTurnRwcFromCounts();
+                CameraTurnCounts360Changed?.Invoke(this, EventArgs.Empty);
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CameraTurnCounts360)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MasterCalibrationValue)));
+                if (IsCountsMode)
+                {
+                    SyncCalibFromCameraTurnToProfile();
+                    UpdateCameraTurnPresetFromCurrentRwc();
+                }
+            }
+        }
+        public event EventHandler CameraTurnCounts360Changed;
+
+        private double cameraTurnRWC = 0.0;
+        public double CameraTurnRWC
+        {
+            get => cameraTurnRWC;
+            set
+            {
+                if (cameraTurnRWC == value) return;
+                cameraTurnRWC = value;
+                // RWC is only ever the fixed master while in RWC mode; Counts is what's
+                // derived from it. See the matching note in CameraTurnCounts360.
+                if (IsRwcMode) CalculateCameraTurnCountsFromRwc();
+                CameraTurnRWCChanged?.Invoke(this, EventArgs.Empty);
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CameraTurnRWC)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MasterCalibrationValue)));
+                if (IsRwcMode)
+                {
+                    SyncCalibFromCameraTurnToProfile();
+                    UpdateCameraTurnPresetFromCurrentRwc();
+                }
+            }
+        }
+        public event EventHandler CameraTurnRWCChanged;
+
+        private bool _cameraTurnReady = false;
+        private bool _applyingCameraTurnPreset = false;
+
+        public IReadOnlyList<GameCalibPreset> CameraTurnGamePresets => GameCalibPreset.All;
+
+        public GameCalibPreset SelectedCameraTurnPreset
+        {
+            get => GameCalibPreset.FindByName(mapper.ActionProfile.CalibPresetName) ??
+                GameCalibPreset.Custom;
+            set
+            {
+                GameCalibPreset next = value ?? GameCalibPreset.Custom;
+                if (mapper.ActionProfile.CalibPresetName == next.Name) return;
+                mapper.ActionProfile.CalibPresetName = next.Name;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedCameraTurnPreset)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedPreset)));
+                if (next.IsCustom || !_cameraTurnReady) return;
+                _applyingCameraTurnPreset = true;
+                if (IsCountsMode)
+                {
+                    // Counts is this mode's fixed master: keep it as-is and let sensitivity
+                    // move to whatever value reproduces the preset's RWC at that Counts.
+                    if (CameraTurnCounts360 > 0.0) CameraTurnInGameSens = next.RWC * 360.0 / CameraTurnCounts360;
+                }
+                else
+                {
+                    // RWC is this mode's fixed master: move it directly to the preset's value
+                    // and leave sensitivity exactly as the user had it.
+                    CameraTurnRWC = next.RWC;
+                }
+                _applyingCameraTurnPreset = false;
+            }
+        }
+
+        private void LoadCameraTurnCalibFromProfile(bool updateSelectedSlot)
+        {
+            cameraTurnInGameSens = mapper.ActionProfile.CalibInGameSens;
+            cameraTurnRWC = mapper.ActionProfile.CalibRwc;
+            cameraTurnCounts360 = mapper.ActionProfile.CalibCounts > 0.0
+                ? mapper.ActionProfile.CalibCounts
+                : cameraTurnCounts360;
+            cameraTurnCalculatedRWC = cameraTurnCounts360 > 0.0
+                ? cameraTurnInGameSens / (360.0 / cameraTurnCounts360)
+                : 0.0;
+
+            if (updateSelectedSlot && selectedSlotItemIndex >= 0)
+            {
+                OutputSlotItem slotItem = slotItems[selectedSlotItemIndex];
+                if (slotItem.Data.OutputType == OutputActionData.ActionType.CameraTurn)
+                {
+                    mapper.ProcessMappingChangeAction(() =>
+                    {
+                        slotItem.Data.cameraTurnCounts360 = cameraTurnCounts360;
+                    });
+                }
+            }
+        }
+
+        private void RaiseCameraTurnCalibPropertiesChanged()
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CameraTurnInGameSens)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CameraTurnRWC)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CameraTurnCounts360)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CameraTurnCalculatedRWC)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedCameraTurnPreset)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(InGameSens)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedPreset)));
+            RaiseCalibModePropertyChanges();
+            CameraTurnCalculatedRWCChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private double cameraTurnInGameSens = 1.0;
+        public double CameraTurnInGameSens
+        {
+            get => cameraTurnInGameSens;
+            set
+            {
+                if (!_cameraTurnReady) return;
+                if (cameraTurnInGameSens == value) return;
+                cameraTurnInGameSens = value;
+                // Whichever of RWC/Counts is NOT the mode's master is derived and must be
+                // recomputed here; the master itself never moves just because sensitivity did.
+                if (IsCountsMode) CalculateCameraTurnRwcFromCounts();
+                else CalculateCameraTurnCountsFromRwc();
+                CameraTurnInGameSensChanged?.Invoke(this, EventArgs.Empty);
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CameraTurnInGameSens)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(InGameSens)));
+                SyncCalibFromCameraTurnToProfile();
+                UpdateCameraTurnPresetFromCurrentRwc();
+            }
+        }
+        public event EventHandler CameraTurnInGameSensChanged;
+
+        // Profile-level RWC/Counts mode toggle, shared across the gyro mouse,
+        // flick stick, trackpad mouse and flick turn calibration panels.
+        public CalibMode CalibMode
+        {
+            get => mapper.ActionProfile.CalibMode;
+            set
+            {
+                if (mapper.ActionProfile.CalibMode == value) return;
+                mapper.ActionProfile.CalibMode = value;
+                RaiseCalibModePropertyChanges();
+                SyncCalibFromCameraTurnToProfile();
+            }
+        }
+
+        public bool IsRwcMode
+        {
+            get => CalibMode == DS4MapperTest.CalibMode.RwcMode;
+            set { if (value) CalibMode = DS4MapperTest.CalibMode.RwcMode; }
+        }
+
+        public bool IsCountsMode
+        {
+            get => CalibMode == DS4MapperTest.CalibMode.CountsMode;
+            set { if (value) CalibMode = DS4MapperTest.CalibMode.CountsMode; }
+        }
+
+        public string MasterCalibrationLabel => IsCountsMode ? "Counts" : "RWC";
+
+        public double MasterCalibrationValue
+        {
+            get => IsCountsMode ? CameraTurnCounts360 : CameraTurnRWC;
+            set
+            {
+                if (IsCountsMode) CameraTurnCounts360 = value;
+                else CameraTurnRWC = value;
+            }
+        }
+
+        public IReadOnlyList<GameCalibPreset> GamePresets => CameraTurnGamePresets;
+
+        public GameCalibPreset SelectedPreset
+        {
+            get => SelectedCameraTurnPreset;
+            set => SelectedCameraTurnPreset = value;
+        }
+
+        public double InGameSens
+        {
+            get => CameraTurnInGameSens;
+            set => CameraTurnInGameSens = value;
+        }
+
+        private void RaiseCalibModePropertyChanges()
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CalibMode)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRwcMode)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsCountsMode)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MasterCalibrationLabel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MasterCalibrationValue)));
+        }
+
+        private void ActionProfile_CalibModeChanged(object sender, EventArgs e)
+        {
+            RaiseCalibModePropertyChanges();
+        }
+
+        private void ActionProfile_CalibPresetNameChanged(object sender, EventArgs e)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedCameraTurnPreset)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedPreset)));
+        }
+
+        private double cameraTurnCalculatedRWC = 0.0;
+        public double CameraTurnCalculatedRWC
+        {
+            get => cameraTurnCalculatedRWC;
+            set
+            {
+                if (cameraTurnCalculatedRWC == value) return;
+                cameraTurnCalculatedRWC = value;
+                CameraTurnCalculatedRWCChanged?.Invoke(this, EventArgs.Empty);
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CameraTurnCalculatedRWC)));
+            }
+        }
+        public event EventHandler CameraTurnCalculatedRWCChanged;
+
+        private BasicActionCommand copyFlickTurnRWCComm;
+        public BasicActionCommand CopyFlickTurnRWCComm => copyFlickTurnRWCComm;
+
+        private bool showCameraTurnOptions;
+        public bool ShowCameraTurnOptions
+        {
+            get => showCameraTurnOptions;
+            set
+            {
+                if (showCameraTurnOptions == value) return;
+                showCameraTurnOptions = value;
+                if (value)
+                {
+                    _cameraTurnReady = false;
+                    LoadCameraTurnCalibFromProfile(updateSelectedSlot: true);
+                    RaiseCameraTurnCalibPropertiesChanged();
+                    System.Windows.Application.Current.Dispatcher.BeginInvoke(
+                        System.Windows.Threading.DispatcherPriority.Background,
+                        new Action(() =>
+                        {
+                            LoadCameraTurnCalibFromProfile(updateSelectedSlot: true);
+                            RaiseCameraTurnCalibPropertiesChanged();
+                            System.Windows.Application.Current.Dispatcher.BeginInvoke(
+                                System.Windows.Threading.DispatcherPriority.ApplicationIdle,
+                                new Action(() =>
+                                {
+                                    LoadCameraTurnCalibFromProfile(updateSelectedSlot: true);
+                                    _cameraTurnReady = true;
+                                    RaiseCameraTurnCalibPropertiesChanged();
+                                }));
+                        }));
+                }
+                ShowCameraTurnOptionsChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        public event EventHandler ShowCameraTurnOptionsChanged;
+
+        public bool CameraTurnActive
+        {
+            get
+            {
+                if (selectedSlotItemIndex < 0) return false;
+                return slotItems[selectedSlotItemIndex].Data.OutputType == OutputActionData.ActionType.CameraTurn;
+            }
+        }
+        public event EventHandler CameraTurnActiveChanged;
+
+
         private ObservableCollection<OutputSlotItem> slotItems;
         public ObservableCollection<OutputSlotItem> SlotItems => slotItems;
 
@@ -357,6 +667,12 @@ namespace DS4MapperTest.ViewModels
         public event EventHandler UnboundActiveChanged;
 
         public ButtonActionEditViewModel(Mapper mapper, ButtonAction currentAction, ActionFunc func)
+            : this(mapper, currentAction, func, 0)
+        {
+        }
+
+        public ButtonActionEditViewModel(Mapper mapper, ButtonAction currentAction, ActionFunc func,
+            int initialSlotIndex)
         {
             this.currentAction = currentAction;
             this.mapper = mapper;
@@ -396,11 +712,38 @@ namespace DS4MapperTest.ViewModels
 
             if (slotItems.Count > 0)
             {
-                PrepareControlsForSlot(slotItems[0]);
-                SelectedSlotItemIndex = 0;
+                int selectedIndex = Math.Clamp(initialSlotIndex, 0, slotItems.Count - 1);
+                PrepareControlsForSlot(slotItems[selectedIndex]);
+                SelectedSlotItemIndex = selectedIndex;
             }
 
+            copyFlickTurnRWCComm = new BasicActionCommand((parameter) =>
+            {
+                CameraTurnRWC = cameraTurnCalculatedRWC;
+            });
+
+            mapper.ActionProfile.CalibModeChanged += ActionProfile_CalibModeChanged;
+            mapper.ActionProfile.CalibPresetNameChanged += ActionProfile_CalibPresetNameChanged;
+            mapper.ActionProfile.OutputGamepadSettings.OutputGamepadChanged += OutputGamepadSettings_OutputGamepadChanged;
+
             SetupEvents();
+        }
+
+        private void OutputGamepadSettings_OutputGamepadChanged(object sender, EventArgs e)
+        {
+            RefreshGamepadLabels();
+        }
+
+        private void RefreshGamepadLabels()
+        {
+            bool useDualShock4Labels = UsingDualShock4Output;
+            foreach (var def in gamepadButtonDefs)
+            {
+                if (gamepadIndexAliases.TryGetValue(def.Code, out int index))
+                {
+                    gamepadComboItems[index].DisplayName = useDualShock4Labels ? def.DualShock4Label : def.XboxLabel;
+                }
+            }
         }
 
         private void ButtonActionEditViewModel_SelectedSlotItemIndexChanged(object sender, EventArgs e)
@@ -441,6 +784,11 @@ namespace DS4MapperTest.ViewModels
             SelectedLayerChangeConditionIndexChanged += ButtonActionEditViewModel_SelectedLayerChangeConditionIndexChanged;
             SelectedSetChoiceIndexChanged += ButtonActionEditViewModel_SelectedSetChoiceIndexChanged;
             SelectedSetChangeConditionIndexChanged += ButtonActionEditViewModel_SelectedSetChangeConditionIndexChanged;
+            CameraTurnAngleChanged += ButtonActionEditViewModel_CameraTurnAngleChanged;
+            CameraTurnDurationMsChanged += ButtonActionEditViewModel_CameraTurnDurationMsChanged;
+            CameraTurnCounts360Changed += ButtonActionEditViewModel_CameraTurnCounts360Changed;
+            CameraTurnRWCChanged += ButtonActionEditViewModel_CameraTurnRWCChanged;
+            CameraTurnInGameSensChanged += ButtonActionEditViewModel_CameraTurnInGameSensChanged;
         }
 
         private void UpdateMouseYSpeedOutput(object sender, EventArgs e)
@@ -810,6 +1158,11 @@ namespace DS4MapperTest.ViewModels
             SelectedLayerChoiceIndexChanged -= ButtonActionEditViewModel_SelectedLayerChoiceIndexChanged;
             SelectedSetChoiceIndexChanged -= ButtonActionEditViewModel_SelectedSetChoiceIndexChanged;
             SelectedSetChangeConditionIndexChanged -= ButtonActionEditViewModel_SelectedSetChangeConditionIndexChanged;
+            CameraTurnAngleChanged -= ButtonActionEditViewModel_CameraTurnAngleChanged;
+            CameraTurnDurationMsChanged -= ButtonActionEditViewModel_CameraTurnDurationMsChanged;
+            CameraTurnCounts360Changed -= ButtonActionEditViewModel_CameraTurnCounts360Changed;
+            CameraTurnRWCChanged -= ButtonActionEditViewModel_CameraTurnRWCChanged;
+            CameraTurnInGameSensChanged -= ButtonActionEditViewModel_CameraTurnInGameSensChanged;
         }
 
         private void PostSlotChangeChecks()
@@ -933,6 +1286,22 @@ namespace DS4MapperTest.ViewModels
                                 //SelectedLayerChoiceIndex = -1;
                             }
                         }
+                    }
+
+                    break;
+                case OutputActionData.ActionType.CameraTurn:
+                    {
+                        cameraTurnAngle = item.Data.cameraTurnAngle;
+                        cameraTurnDurationMs = item.Data.cameraTurnDurationMs;
+                        cameraTurnCounts360 = item.Data.cameraTurnCounts360;
+                        cameraTurnInGameSens = mapper.ActionProfile.CalibInGameSens;
+                        cameraTurnRWC = mapper.ActionProfile.CalibRwc;
+                        cameraTurnCalculatedRWC = cameraTurnCounts360 > 0.0
+                            ? cameraTurnInGameSens / (360.0 / cameraTurnCounts360)
+                            : 0.0;
+                        ShowCameraTurnOptions = true;
+                        CameraTurnActiveChanged?.Invoke(this, EventArgs.Empty);
+                        CameraTurnCalculatedRWCChanged?.Invoke(this, EventArgs.Empty);
                     }
 
                     break;
@@ -1082,36 +1451,92 @@ namespace DS4MapperTest.ViewModels
                 ShowAvailableLayers = false;
                 SelectedLayerChangeConditionIndex = -1;
             }
+
+            if (ignoreCombo != ActionComboBoxTypes.CameraTurn)
+            {
+                ShowCameraTurnOptions = false;
+            }
         }
+
+        // Button name shown per output controller type. DPad and stick axes read the
+        // same on all pads, so only the face/shoulder/special buttons need aliases.
+        private static readonly (JoypadActionCodes Code, string XboxLabel, string DualShock4Label,
+            string SwitchPro2Label, bool SpecialOutputOnly)[] gamepadButtonDefs =
+            new (JoypadActionCodes, string, string, string, bool)[]
+            {
+                (JoypadActionCodes.X360_A, "A", "Cross", "B", false),
+                (JoypadActionCodes.X360_B, "B", "Circle", "A", false),
+                (JoypadActionCodes.X360_X, "X", "Square", "Y", false),
+                (JoypadActionCodes.X360_Y, "Y", "Triangle", "X", false),
+                (JoypadActionCodes.X360_LB, "LB", "L1", "L", false),
+                (JoypadActionCodes.X360_RB, "RB", "R1", "R", false),
+                (JoypadActionCodes.X360_LT, "LT", "L2", "ZL", false),
+                (JoypadActionCodes.X360_RT, "RT", "R2", "ZR", false),
+                (JoypadActionCodes.X360_Guide, "Guide", "PS", "Home", false),
+                (JoypadActionCodes.X360_Back, "Back", "Share", "Minus", false),
+                (JoypadActionCodes.X360_Start, "Start", "Options", "Plus", false),
+                (JoypadActionCodes.BtnCapture, "Capture", "Capture", "Capture", true),
+                (JoypadActionCodes.X360_ThumbL, "LStick Click", "L3", "LStick Click", false),
+                (JoypadActionCodes.X360_ThumbR, "RStick Click", "R3", "RStick Click", false),
+                (JoypadActionCodes.BtnLGrip, "L4", "L4", "GL", true),
+                (JoypadActionCodes.BtnRGrip, "R4", "R4", "GR", true),
+                (JoypadActionCodes.BtnMode2, "Fn Left", "Fn Left", "C", true),
+                (JoypadActionCodes.BtnMode3, "Fn Right", "Fn Right", "Headset", true),
+                (JoypadActionCodes.X360_DPAD_UP, "DPad Up", "DPad Up", "DPad Up", false),
+                (JoypadActionCodes.X360_DPAD_DOWN, "DPad Down", "DPad Down", "DPad Down", false),
+                (JoypadActionCodes.X360_DPAD_LEFT, "DPad Left", "DPad Left", "DPad Left", false),
+                (JoypadActionCodes.X360_DPAD_RIGHT, "DPad Right", "DPad Right", "DPad Right", false),
+            };
+
+        private bool UsingDualShock4Output =>
+            mapper.ActionProfile.OutputGamepadSettings.OutputGamepad == Mapper.OutputContType.DualShock4 ||
+            mapper.ActionProfile.OutputGamepadSettings.OutputGamepad == Mapper.OutputContType.DualSense ||
+            mapper.ActionProfile.OutputGamepadSettings.OutputGamepad == Mapper.OutputContType.DualSenseEdge;
+
+        private bool UsingSwitchPro2Output =>
+            mapper.ActionProfile.OutputGamepadSettings.OutputGamepad == Mapper.OutputContType.SwitchPro2;
+
+        private bool UsingDualSenseEdgeOutput =>
+            mapper.ActionProfile.OutputGamepadSettings.OutputGamepad == Mapper.OutputContType.DualSenseEdge;
 
         public void PopulateComboBoxAliases()
         {
             int tempInd = 0;
 
-            //if (mapper.ActionProfile.OutputGamepadSettings.outputGamepad == EmulatedControllerSettings.OutputControllerType.Xbox360)
             {
+                bool useDualShock4Labels = UsingDualShock4Output;
+                bool useSwitchPro2Labels = UsingSwitchPro2Output;
+
                 tempInd = 0;
+                gamepadComboItems.Add(new GamepadCodeItem("Unbound", JoypadActionCodes.Empty, tempInd++));
+                foreach (var def in gamepadButtonDefs)
+                {
+                    if (def.SpecialOutputOnly &&
+                        !UsingDualSenseEdgeOutput &&
+                        !UsingSwitchPro2Output)
+                    {
+                        continue;
+                    }
+
+                    string label = useSwitchPro2Labels
+                        ? def.SwitchPro2Label
+                        : useDualShock4Labels
+                            ? def.DualShock4Label
+                            : def.XboxLabel;
+                    gamepadComboItems.Add(new GamepadCodeItem(label, def.Code, tempInd++));
+                }
+                gamepadComboItems.Add(new GamepadCodeItem("PS Touchpad Click", JoypadActionCodes.CenterPadClick, tempInd++));
+
                 gamepadComboItems.AddRange(new GamepadCodeItem[]
                 {
-                    new GamepadCodeItem("Unbound", JoypadActionCodes.Empty, tempInd++),
-                    new GamepadCodeItem("X360_A", JoypadActionCodes.X360_A, tempInd++),
-                    new GamepadCodeItem("X360_B", JoypadActionCodes.X360_B, tempInd++),
-                    new GamepadCodeItem("X360_X", JoypadActionCodes.X360_X, tempInd++),
-                    new GamepadCodeItem("X360_Y", JoypadActionCodes.X360_Y, tempInd++),
-                    new GamepadCodeItem("X360_LB", JoypadActionCodes.X360_LB, tempInd++),
-                    new GamepadCodeItem("X360_RB", JoypadActionCodes.X360_RB, tempInd++),
-                    new GamepadCodeItem("X360_LT", JoypadActionCodes.X360_LT, tempInd++),
-                    new GamepadCodeItem("X360_RT", JoypadActionCodes.X360_RT, tempInd++),
-                    new GamepadCodeItem("X360_Guide", JoypadActionCodes.X360_Guide, tempInd++),
-                    new GamepadCodeItem("X360_Back", JoypadActionCodes.X360_Back, tempInd++),
-                    new GamepadCodeItem("X360_Start", JoypadActionCodes.X360_Start, tempInd++),
-                    new GamepadCodeItem("X360_ThumbL", JoypadActionCodes.X360_ThumbL, tempInd++),
-                    new GamepadCodeItem("X360_ThumbR", JoypadActionCodes.X360_ThumbR, tempInd++),
-                    new GamepadCodeItem("X360_DPad_Up", JoypadActionCodes.X360_DPAD_UP, tempInd++),
-                    new GamepadCodeItem("X360_DPad_Down", JoypadActionCodes.X360_DPAD_DOWN, tempInd++),
-                    new GamepadCodeItem("X360_DPad_Left", JoypadActionCodes.X360_DPAD_LEFT, tempInd++),
-                    new GamepadCodeItem("X360_DPad_Right", JoypadActionCodes.X360_DPAD_RIGHT, tempInd++),
-                    new GamepadCodeItem("DS4_Touchpad_Click", JoypadActionCodes.CenterPadClick, tempInd++),
+                    new GamepadCodeItem("LS Up", JoypadActionCodes.AxisLYNeg, tempInd++),
+                    new GamepadCodeItem("LS Down", JoypadActionCodes.AxisLYPos, tempInd++),
+                    new GamepadCodeItem("LS Left", JoypadActionCodes.AxisLXNeg, tempInd++),
+                    new GamepadCodeItem("LS Right", JoypadActionCodes.AxisLXPos, tempInd++),
+                    new GamepadCodeItem("RS Up", JoypadActionCodes.AxisRYNeg, tempInd++),
+                    new GamepadCodeItem("RS Down", JoypadActionCodes.AxisRYPos, tempInd++),
+                    new GamepadCodeItem("RS Left", JoypadActionCodes.AxisRXNeg, tempInd++),
+                    new GamepadCodeItem("RS Right", JoypadActionCodes.AxisRXPos, tempInd++),
                 });
 
                 gamepadIndexAliases = new Dictionary<JoypadActionCodes, int>();
@@ -1222,8 +1647,8 @@ namespace DS4MapperTest.ViewModels
                 new MouseButtonCodeItem("Left Button", MouseButtonCodes.MOUSE_LEFT_BUTTON, tempInd++),
                 new MouseButtonCodeItem("Right Button", MouseButtonCodes.MOUSE_RIGHT_BUTTON, tempInd++),
                 new MouseButtonCodeItem("Middle Button", MouseButtonCodes.MOUSE_MIDDLE_BUTTON, tempInd++),
-                new MouseButtonCodeItem("XButton1", MouseButtonCodes.MOUSE_XBUTTON1, tempInd++),
-                new MouseButtonCodeItem("XButton2", MouseButtonCodes.MOUSE_XBUTTON2, tempInd++),
+                new MouseButtonCodeItem("Mouse 4", MouseButtonCodes.MOUSE_XBUTTON1, tempInd++),
+                new MouseButtonCodeItem("Mouse 5", MouseButtonCodes.MOUSE_XBUTTON2, tempInd++),
             });
 
             tempInd = 0;
@@ -1306,6 +1731,182 @@ namespace DS4MapperTest.ViewModels
             PostSlotChangeChecks();
         }
 
+        public void AssignCameraTurn()
+        {
+            if (selectedSlotItemIndex <= -1) return;
+
+            OutputSlotItem item = slotItems[selectedSlotItemIndex];
+            cameraTurnAngle = DEFAULT_CAMERA_TURN_ANGLE;
+            cameraTurnDurationMs = DEFAULT_CAMERA_TURN_DURATION_MS;
+            LoadCameraTurnCalibFromProfile(updateSelectedSlot: false);
+            mapper.ProcessMappingChangeAction(() =>
+            {
+                currentAction.Release(mapper, ignoreReleaseActions: true);
+                OutputActionData tempData = item.Data;
+                tempData.Reset();
+                tempData.OutputType = OutputActionData.ActionType.CameraTurn;
+                tempData.cameraTurnAngle = cameraTurnAngle;
+                tempData.cameraTurnDurationMs = cameraTurnDurationMs;
+                tempData.cameraTurnCounts360 = cameraTurnCounts360;
+            });
+
+            ResetComboBoxIndex(ActionComboBoxTypes.CameraTurn);
+            ShowCameraTurnOptions = true;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CameraTurnAngle)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CameraTurnDurationMs)));
+            PostSlotChangeChecks();
+            CameraTurnActiveChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void AssignRecalibrateGyro()
+        {
+            if (selectedSlotItemIndex <= -1) return;
+
+            OutputSlotItem item = slotItems[selectedSlotItemIndex];
+            mapper.ProcessMappingChangeAction(() =>
+            {
+                currentAction.Release(mapper, ignoreReleaseActions: true);
+                OutputActionData tempData = item.Data;
+                tempData.Reset();
+                tempData.OutputType = OutputActionData.ActionType.RecalibrateGyro;
+            });
+
+            ResetComboBoxIndex(ActionComboBoxTypes.None);
+            PostSlotChangeChecks();
+        }
+
+        private void ButtonActionEditViewModel_CameraTurnAngleChanged(object sender, EventArgs e)
+        {
+            if (selectedSlotItemIndex < 0) return;
+            OutputSlotItem slotItem = slotItems[selectedSlotItemIndex];
+            if (slotItem.Data.OutputType != OutputActionData.ActionType.CameraTurn) return;
+            mapper.ProcessMappingChangeAction(() =>
+            {
+                currentAction.Release(mapper, ignoreReleaseActions: true);
+                slotItem.Data.cameraTurnAngle = cameraTurnAngle;
+            });
+        }
+
+        private void ButtonActionEditViewModel_CameraTurnDurationMsChanged(object sender, EventArgs e)
+        {
+            if (selectedSlotItemIndex < 0) return;
+            OutputSlotItem slotItem = slotItems[selectedSlotItemIndex];
+            if (slotItem.Data.OutputType != OutputActionData.ActionType.CameraTurn) return;
+            mapper.ProcessMappingChangeAction(() =>
+            {
+                currentAction.Release(mapper, ignoreReleaseActions: true);
+                slotItem.Data.cameraTurnDurationMs = cameraTurnDurationMs;
+            });
+        }
+
+        private void ButtonActionEditViewModel_CameraTurnCounts360Changed(object sender, EventArgs e)
+        {
+            if (selectedSlotItemIndex < 0) return;
+            OutputSlotItem slotItem = slotItems[selectedSlotItemIndex];
+            if (slotItem.Data.OutputType != OutputActionData.ActionType.CameraTurn) return;
+            mapper.ProcessMappingChangeAction(() =>
+            {
+                currentAction.Release(mapper, ignoreReleaseActions: true);
+                slotItem.Data.cameraTurnCounts360 = cameraTurnCounts360;
+            });
+            RecalculateCameraTurnRWC();
+            SyncCalibFromCameraTurnToProfile();
+        }
+
+        private void RecalculateCameraTurnRWC()
+        {
+            CameraTurnCalculatedRWC = cameraTurnCounts360 > 0.0
+                ? cameraTurnInGameSens / (360.0 / cameraTurnCounts360)
+                : 0.0;
+        }
+
+        // These two mirror CalculateRwcFromCounts/CalculateCountsFromRwc in the gyro mouse,
+        // stick mouse, trackpad mouse and flick stick ViewModels: whichever of RWC/Counts is
+        // not the current mode's master gets recomputed here, via the backing field directly
+        // rather than the public setter, so this never re-enters CameraTurnRWCChanged/
+        // CameraTurnCounts360Changed for a value that is only a side effect of another change.
+        private void CalculateCameraTurnRwcFromCounts()
+        {
+            double rwc = cameraTurnCounts360 * cameraTurnInGameSens / 360.0;
+            if (cameraTurnRWC == rwc) return;
+            cameraTurnRWC = rwc;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CameraTurnRWC)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MasterCalibrationValue)));
+        }
+
+        private void CalculateCameraTurnCountsFromRwc()
+        {
+            double counts = cameraTurnInGameSens > 0.0
+                ? cameraTurnRWC * 360.0 / cameraTurnInGameSens
+                : 0.0;
+            if (cameraTurnCounts360 == counts) return;
+            cameraTurnCounts360 = counts;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CameraTurnCounts360)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MasterCalibrationValue)));
+            // The currently-selected output slot's live cameraTurnCounts360 needs the same
+            // release-before-update handling this gets when the user edits Counts directly,
+            // regardless of which field's edit is what derived this new Counts value.
+            CameraTurnCounts360Changed?.Invoke(this, EventArgs.Empty);
+        }
+
+        // Whenever RWC's authoritative value settles (direct edit, derived from Counts, or
+        // derived from a sensitivity change), check whether it now matches a known game
+        // preset within tolerance and reflect that in the preset dropdown; falls back to
+        // Custom when it doesn't. Skipped while a preset is actively being applied, since
+        // that flow already knows exactly which preset it is setting.
+        private void UpdateCameraTurnPresetFromCurrentRwc()
+        {
+            if (_applyingCameraTurnPreset) return;
+            string matchedName = (GameCalibPreset.MatchByRwc(mapper.ActionProfile.CalibRwc) ??
+                GameCalibPreset.Custom).Name;
+            mapper.ActionProfile.CalibPresetName = matchedName;
+        }
+
+        private void SyncCalibFromCameraTurnToProfile()
+        {
+            double counts = cameraTurnCounts360;
+            double inGameSens = cameraTurnInGameSens;
+            double rwc = inGameSens > 0.0 ? inGameSens * counts / 360.0 : 0.0;
+            mapper.ActionProfile.CalibCounts = counts;
+            mapper.ActionProfile.CalibInGameSens = inGameSens;
+            mapper.ActionProfile.CalibRwc = rwc;
+            mapper.ProcessMappingChangeAction(() =>
+            {
+                foreach (var set in mapper.ActionProfile.ActionSets)
+                    foreach (var layer in set.ActionLayers)
+                        foreach (var mapAction in layer.normalActionDict.Values)
+                        {
+                            if (mapAction is ButtonAction ba)
+                                foreach (var func in ba.ActionFuncs)
+                                    foreach (var data in func.OutputActions)
+                                        if (data.OutputType == OutputActionData.ActionType.CameraTurn)
+                                            data.cameraTurnCounts360 = counts;
+                            if (mapAction is StickFlickStick sfs)
+                            {
+                                sfs.RealWorldCalibration = rwc;
+                                sfs.InGameSens = inGameSens;
+                            }
+                            if (mapAction is TouchpadFlickStick tfs)
+                            {
+                                tfs.RealWorldCalibration = rwc;
+                                tfs.InGameSens = inGameSens;
+                            }
+                        }
+            });
+        }
+
+        private void ButtonActionEditViewModel_CameraTurnRWCChanged(object sender, EventArgs e)
+        {
+            if (cameraTurnInGameSens == 0.0) return;
+            CameraTurnCounts360 = (cameraTurnRWC * 360.0) / cameraTurnInGameSens;
+        }
+
+        private void ButtonActionEditViewModel_CameraTurnInGameSensChanged(object sender, EventArgs e)
+        {
+            RecalculateCameraTurnRWC();
+            SyncCalibFromCameraTurnToProfile();
+        }
+
         public void RemoveOutputSlot(int ind)
         {
             if (slotItems.Count == 1)
@@ -1365,10 +1966,21 @@ namespace DS4MapperTest.ViewModels
         }
     }
 
-    public class GamepadCodeItem
+    public class GamepadCodeItem : INotifyPropertyChanged
     {
+        public event PropertyChangedEventHandler PropertyChanged;
+
         private string displayName;
-        public string DisplayName => displayName;
+        public string DisplayName
+        {
+            get => displayName;
+            set
+            {
+                if (displayName == value) return;
+                displayName = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayName)));
+            }
+        }
 
         private JoypadActionCodes code;
         public JoypadActionCodes Code => code;

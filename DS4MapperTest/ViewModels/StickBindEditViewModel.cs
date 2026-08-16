@@ -5,6 +5,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Controls;
+using DS4MapperTest.ButtonActions;
+using DS4MapperTest.MapperUtil;
 using DS4MapperTest.StickActions;
 
 namespace DS4MapperTest.ViewModels
@@ -78,6 +80,13 @@ namespace DS4MapperTest.ViewModels
                         StickPadAction tempAction = new StickPadAction();
                         var joyDefaults = mapper.DeviceActionDefaults.GrabStickPadActionActionDefaults();
                         joyDefaults.Process(tempAction);
+
+                        AxisDirButton[] wasd = CreateWasdButtons(mapper);
+                        tempAction.EventCodes4[(int)StickPadAction.DpadDirections.Up] = wasd[0];
+                        tempAction.EventCodes4[(int)StickPadAction.DpadDirections.Down] = wasd[1];
+                        tempAction.EventCodes4[(int)StickPadAction.DpadDirections.Left] = wasd[2];
+                        tempAction.EventCodes4[(int)StickPadAction.DpadDirections.Right] = wasd[3];
+
                         result = tempAction;
                     }
 
@@ -112,6 +121,39 @@ namespace DS4MapperTest.ViewModels
                 case 6:
                     {
                         StickFlickStick tempAction = new StickFlickStick();
+                        // Flick stick uses profile-wide calibration at runtime. Keep a
+                        // newly selected stick action in step with gyro, touchpad flick
+                        // stick, and camera-turn calibration from its first frame.
+                        tempAction.RealWorldCalibration = mapper.ActionProfile.CalibRwc;
+                        tempAction.InGameSens = mapper.ActionProfile.CalibInGameSens;
+                        result = tempAction;
+                    }
+
+                    break;
+                case 7:
+                    {
+                        StickAnalogEmulationAction tempAction = new StickAnalogEmulationAction();
+
+                        AxisDirButton[] wasd = CreateWasdButtons(mapper);
+                        tempAction.DirButtons[(int)StickAnalogEmulationAction.DirSlot.Up] = wasd[0];
+                        tempAction.DirButtons[(int)StickAnalogEmulationAction.DirSlot.Down] = wasd[1];
+                        tempAction.DirButtons[(int)StickAnalogEmulationAction.DirSlot.Left] = wasd[2];
+                        tempAction.DirButtons[(int)StickAnalogEmulationAction.DirSlot.Right] = wasd[3];
+
+                        result = tempAction;
+                    }
+
+                    break;
+                case 8:
+                    {
+                        StickHybridAim tempAction = new StickHybridAim();
+                        result = tempAction;
+                    }
+
+                    break;
+                case 9:
+                    {
+                        StickMouseRing tempAction = new StickMouseRing();
                         result = tempAction;
                     }
 
@@ -121,6 +163,27 @@ namespace DS4MapperTest.ViewModels
             }
 
             return result;
+        }
+
+        // Default Up/Down/Left/Right binding for any stick mode using the four cardinal
+        // directional slots (DPad, Analog Emulation). Returns [Up, Down, Left, Right].
+        private static AxisDirButton[] CreateWasdButtons(Mapper mapper)
+        {
+            return new AxisDirButton[]
+            {
+                CreateKeyButton(mapper, VirtualKeys.W),
+                CreateKeyButton(mapper, VirtualKeys.S),
+                CreateKeyButton(mapper, VirtualKeys.A),
+                CreateKeyButton(mapper, VirtualKeys.D),
+            };
+        }
+
+        private static AxisDirButton CreateKeyButton(Mapper mapper, VirtualKeys key)
+        {
+            OutputActionData data = new OutputActionData(OutputActionData.ActionType.Keyboard,
+                (int)key, (int)mapper.EventInputMapping.GetRealEventKey((uint)key));
+            data.OutputCodeStr = OutputDataAliasUtil.KeyboardStringAliasDict[key];
+            return new AxisDirButton(data);
         }
 
         public void SwitchAction(StickMapAction action)

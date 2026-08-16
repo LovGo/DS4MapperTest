@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Sensorit.Base;
 using DS4MapperTest.ActionUtil;
+using DS4MapperTest.Common;
 using DS4MapperTest.MapperUtil;
 
 namespace DS4MapperTest.GyroActions
@@ -14,6 +14,60 @@ namespace DS4MapperTest.GyroActions
     {
         Yaw,
         Roll,
+    }
+
+    public enum GyroInvertAxisChoice
+    {
+        XAndY,
+        XOnly,
+        YOnly,
+    }
+
+    // Independent, trigger-gated final-output inversion for gyro mouse. Separate from
+    // GyroOrientationSettings: this flips whichever value is already driving the mouse's
+    // horizontal/vertical output, regardless of which gyro source feeds it.
+    public struct GyroInvertSettings
+    {
+        public bool enabled;
+        public GyroInvertAxisChoice axisChoice;
+        public JoypadActionCodes[] triggerButtons;
+        public bool andCond;
+        public bool triggerActivates;
+        public int activationHoldMs;
+
+        public static GyroInvertSettings CreateDefault()
+        {
+            return new GyroInvertSettings()
+            {
+                enabled = false,
+                axisChoice = GyroInvertAxisChoice.XOnly,
+                triggerButtons = Array.Empty<JoypadActionCodes>(),
+                andCond = false,
+                triggerActivates = true,
+                activationHoldMs = 0,
+            };
+        }
+    }
+
+    public static class GyroInvertApplier
+    {
+        public static void Apply(GyroInvertAxisChoice axisChoice, ref double x, ref double y)
+        {
+            switch (axisChoice)
+            {
+                case GyroInvertAxisChoice.XOnly:
+                    x = -x;
+                    break;
+                case GyroInvertAxisChoice.YOnly:
+                    y = -y;
+                    break;
+                case GyroInvertAxisChoice.XAndY:
+                default:
+                    x = -x;
+                    y = -y;
+                    break;
+            }
+        }
     }
 
     public enum GyroMouseAccelCurveChoice
@@ -72,12 +126,34 @@ namespace DS4MapperTest.GyroActions
     public struct GyroMouseParams
     {
         public const bool JITTER_COMPENSATION_DEFAULT = true;
-        public const double IN_GAME_SENS_DEFAULT = 1.0;
+        public const double DEAD_ZONE_DEFAULT = 0.2;
+        public const double REAL_WORLD_CALIBRATION_DEFAULT = 45.4545;
+        public const double IN_GAME_SENS_DEFAULT = 0.54;
+        public const double COUNTS_CALIBRATION_DEFAULT = 30303.0303;
+        public const GyroMouseAccelCurveChoice ACCEL_CURVE_DEFAULT =
+            GyroMouseAccelCurveChoice.None;
+        public const double SENSITIVITY_DEFAULT = 4.0;
+        public const double VERTICAL_SCALE_DEFAULT = 0.6;
+        public const double MIN_ACCEL_SENS_DEFAULT = SENSITIVITY_DEFAULT;
+        public const double MAX_ACCEL_SENS_DEFAULT = SENSITIVITY_DEFAULT;
+        public const double MIN_GYRO_THRESHOLD_DEFAULT = 0.0;
+        public const double MAX_GYRO_THRESHOLD_DEFAULT = 0.0;
+        public const double POWER_VREF_DEFAULT = 1.0;
+        public const double POWER_EXPONENT_DEFAULT = 1.0;
+        public const double NATURAL_VHALF_DEFAULT = 20.0;
+        public const bool MULTIPLIER_COMPENSATION_DEFAULT = false;
+        public const double ACCELERATION_MULTIPLIER_DEFAULT = 1.0;
+        public const double VERTICAL_ACCELERATION_MULTIPLIER_DEFAULT = 1.0;
+        public const bool VERTICAL_ACCELERATION_SCALE_MODE_DEFAULT = true;
 
         public double deadzone;
+        public double verticalDeadZone;
+        public double gyroAngleSnapDegrees;
+        public bool gyroSmoothAngleSnap;
         public JoypadActionCodes[] gyroTriggerButtons;
         public bool andCond;
         public bool triggerActivates;
+        public int activationHoldMs;
         public double realWorldCalibration;
         public double inGameSens;
         public GyroMouseAccelCurveChoice accelCurve;
@@ -92,16 +168,24 @@ namespace DS4MapperTest.GyroActions
         public double naturalVHalf;
         public double sensitivity;
         public double verticalScale;
+        // Legacy inversion/axis-selection fields. Retained only for backward-compatible
+        // profile deserialisation and migration into `orientation` (see
+        // GyroMouseSerializer.MigrateLegacyOrientation) - no longer read by Prepare/Event.
         public bool invertX;
         public bool invertY;
         public GyroMouseXAxisChoice useForXAxis;
+        public GyroOrientationSettings orientation;
+        public GyroInvertSettings invert;
         public double minThreshold;
         public bool toggleAction;
         public bool smoothing;
         public bool jitterCompensation;
+        public bool multiplierCompensation;
+        public double accelerationMultiplier;
+        public double verticalAccelerationMultiplier;
+        public bool verticalAccelerationScaleMode;
         public SmoothingFilterSettings smoothingFilterSettings;
-        //public double oneEuroMinCutoff;
-        //public double oneEuroMinBeta;
+        public TriggerSensitivityModifierSettings triggerSensitivityModifier;
     }
 
     public class GyroMouse : GyroMapAction
@@ -110,11 +194,31 @@ namespace DS4MapperTest.GyroActions
         {
             public const string NAME = "Name";
             public const string DEAD_ZONE = "DeadZone";
+            public const string VERTICAL_DEAD_ZONE = "VerticalDeadZone";
+            public const string ANGLE_SNAP_DEGREES = "AngleSnapDegrees";
+            public const string SMOOTH_ANGLE_SNAP = "SmoothAngleSnap";
             public const string SENSITIVITY = "Sensitivity";
             public const string VERTICAL_SCALE = "VerticalScale";
             public const string INVERT_X = "InvertX";
             public const string INVERT_Y = "InvertY";
             public const string X_AXIS = "XAxis";
+            public const string GYRO_SPACE = "GyroSpace";
+            public const string HORIZONTAL_CONTROL = "HorizontalControl";
+            public const string VERTICAL_CONTROL = "VerticalControl";
+            public const string HORIZONTAL_INVERT = "HorizontalInvert";
+            public const string VERTICAL_INVERT = "VerticalInvert";
+            public const string HORIZONTAL_YAW_CONTRIBUTION = "HorizontalYawContribution";
+            public const string HORIZONTAL_ROLL_CONTRIBUTION = "HorizontalRollContribution";
+            public const string VERTICAL_YAW_CONTRIBUTION = "VerticalYawContribution";
+            public const string VERTICAL_ROLL_CONTRIBUTION = "VerticalRollContribution";
+            public const string SPACE_INVERT_X = "GyroSpaceInvertX";
+            public const string SPACE_INVERT_Y = "GyroSpaceInvertY";
+            public const string INVERT_GYRO_ENABLED = "InvertGyroEnabled";
+            public const string INVERT_GYRO_AXIS = "InvertGyroAxis";
+            public const string INVERT_GYRO_TRIGGER_BUTTONS = "InvertGyroTriggerButtons";
+            public const string INVERT_GYRO_TRIGGER_ACTIVATES = "InvertGyroTriggerActivates";
+            public const string INVERT_GYRO_TRIGGER_EVAL_COND = "InvertGyroTriggerEvalCond";
+            public const string INVERT_GYRO_ACTIVATION_HOLD_MS = "InvertGyroActivationHoldMs";
             public const string MIN_THRESHOLD = "MinThreshold";
             public const string REAL_WORLD_CALIBRATION = "RealWorldCalibration";
             public const string ACCEL_CURVE = "AccelCurve";
@@ -131,24 +235,48 @@ namespace DS4MapperTest.GyroActions
 
             public const string TRIGGER_BUTTONS = "Triggers";
             public const string TRIGGER_ACTIVATE = "TriggersActivate";
+            public const string ACTIVATION_HOLD_MS = "ActivationHoldMs";
             public const string TRIGGER_EVAL_COND = "TriggersEvalCond";
             public const string TOGGLE_ACTION = "ToggleAction";
             public const string JITTER_COMPENSATION = "JitterCompensation";
+            public const string MULTIPLIER_COMPENSATION = "MultiplierCompensation";
+            public const string ACCELERATION_MULTIPLIER = "AccelerationMultiplier";
+            public const string VERTICAL_ACCELERATION_MULTIPLIER = "VerticalAccelerationMultiplier";
+            public const string VERTICAL_ACCELERATION_SCALE_MODE = "VerticalAccelerationScaleMode";
             public const string SMOOTHING_ENABLED = "SmoothingEnabled";
             public const string SMOOTHING_FILTER = "SmoothingFilter";
-            //public const string SMOOTHING_MINCUTOFF = "SmoothingMinCutoff";
-            //public const string SMOOTHING_MINBETA = "SmoothingMinBeta";
+            public const string TRIGGER_SENSITIVITY_MODIFIER = "TriggerSensitivityModifier";
         }
 
         private HashSet<string> fullPropertySet = new HashSet<string>()
         {
             PropertyKeyStrings.NAME,
             PropertyKeyStrings.DEAD_ZONE,
+            PropertyKeyStrings.VERTICAL_DEAD_ZONE,
+            PropertyKeyStrings.ANGLE_SNAP_DEGREES,
+            PropertyKeyStrings.SMOOTH_ANGLE_SNAP,
             PropertyKeyStrings.SENSITIVITY,
             PropertyKeyStrings.VERTICAL_SCALE,
             PropertyKeyStrings.INVERT_X,
             PropertyKeyStrings.INVERT_Y,
             PropertyKeyStrings.X_AXIS,
+            PropertyKeyStrings.GYRO_SPACE,
+            PropertyKeyStrings.HORIZONTAL_CONTROL,
+            PropertyKeyStrings.VERTICAL_CONTROL,
+            PropertyKeyStrings.HORIZONTAL_INVERT,
+            PropertyKeyStrings.VERTICAL_INVERT,
+            PropertyKeyStrings.HORIZONTAL_YAW_CONTRIBUTION,
+            PropertyKeyStrings.HORIZONTAL_ROLL_CONTRIBUTION,
+            PropertyKeyStrings.VERTICAL_YAW_CONTRIBUTION,
+            PropertyKeyStrings.VERTICAL_ROLL_CONTRIBUTION,
+            PropertyKeyStrings.SPACE_INVERT_X,
+            PropertyKeyStrings.SPACE_INVERT_Y,
+            PropertyKeyStrings.INVERT_GYRO_ENABLED,
+            PropertyKeyStrings.INVERT_GYRO_AXIS,
+            PropertyKeyStrings.INVERT_GYRO_TRIGGER_BUTTONS,
+            PropertyKeyStrings.INVERT_GYRO_TRIGGER_ACTIVATES,
+            PropertyKeyStrings.INVERT_GYRO_TRIGGER_EVAL_COND,
+            PropertyKeyStrings.INVERT_GYRO_ACTIVATION_HOLD_MS,
             PropertyKeyStrings.MIN_THRESHOLD,
             PropertyKeyStrings.REAL_WORLD_CALIBRATION,
             PropertyKeyStrings.IN_GAME_SENS,
@@ -164,57 +292,75 @@ namespace DS4MapperTest.GyroActions
             PropertyKeyStrings.NATURAL_CURVE_VHALF,
             PropertyKeyStrings.TRIGGER_BUTTONS,
             PropertyKeyStrings.TRIGGER_ACTIVATE,
+            PropertyKeyStrings.ACTIVATION_HOLD_MS,
             PropertyKeyStrings.TRIGGER_EVAL_COND,
             PropertyKeyStrings.TOGGLE_ACTION,
             PropertyKeyStrings.SMOOTHING_ENABLED,
             PropertyKeyStrings.SMOOTHING_FILTER,
-            //PropertyKeyStrings.SMOOTHING_MINCUTOFF,
-            //PropertyKeyStrings.SMOOTHING_MINBETA,
+            PropertyKeyStrings.TRIGGER_SENSITIVITY_MODIFIER,
+            PropertyKeyStrings.MULTIPLIER_COMPENSATION,
+            PropertyKeyStrings.ACCELERATION_MULTIPLIER,
+            PropertyKeyStrings.VERTICAL_ACCELERATION_MULTIPLIER,
+            PropertyKeyStrings.VERTICAL_ACCELERATION_SCALE_MODE,
         };
 
         public const string ACTION_TYPE_NAME = "GyroMouseAction";
-        private const bool DEFAULT_SMOOTHING_ENABLED = true;
+        private const bool DEFAULT_SMOOTHING_ENABLED = false;
 
         private double xMotion;
         private double yMotion;
         public GyroMouseParams mouseParams;
         private bool previousTriggerActivated;
         private bool toggleActiveState;
+        private readonly GyroActivationHold activationHold = new GyroActivationHold();
+        private bool invertActive;
+        private readonly GyroActivationHold invertActivationHold = new GyroActivationHold();
         private bool useParentSmoothingFilter;
-
-        //private OneEuroFilter smoothFilter = new OneEuroFilter(1.0, 1.0);
 
         public GyroMouse()
         {
             actionTypeName = ACTION_TYPE_NAME;
             mouseParams = new GyroMouseParams()
             {
-                sensitivity = 1.0,
-                deadzone = 0.6,
-                realWorldCalibration = 5.00,
+                sensitivity = GyroMouseParams.SENSITIVITY_DEFAULT,
+                deadzone = GyroMouseParams.DEAD_ZONE_DEFAULT,
+                verticalDeadZone = 0.0,
+                gyroAngleSnapDegrees = 0.0,
+                gyroSmoothAngleSnap = false,
+                realWorldCalibration = GyroMouseParams.REAL_WORLD_CALIBRATION_DEFAULT,
                 inGameSens = GyroMouseParams.IN_GAME_SENS_DEFAULT,
-                minGyroThreshold = 0.0,
-                maxGyroThreshold = 11.25,
-                minAccelXSens = 1.2,
-                minAccelYSens = 1.2,
-                maxAccelXSens = 3.0,
-                maxAccelYSens = 3.0,
-                powerExponent = 1.0,
-                powerVRef = 1.0,
-                naturalVHalf = 20.0,
-                verticalScale = 1.0,
+                accelCurve = GyroMouseParams.ACCEL_CURVE_DEFAULT,
+                minGyroThreshold = GyroMouseParams.MIN_GYRO_THRESHOLD_DEFAULT,
+                maxGyroThreshold = GyroMouseParams.MAX_GYRO_THRESHOLD_DEFAULT,
+                minAccelXSens = GyroMouseParams.MIN_ACCEL_SENS_DEFAULT,
+                minAccelYSens = GyroMouseParams.VERTICAL_SCALE_DEFAULT,
+                maxAccelXSens = GyroMouseParams.MAX_ACCEL_SENS_DEFAULT,
+                maxAccelYSens = GyroMouseParams.VERTICAL_SCALE_DEFAULT,
+                powerExponent = GyroMouseParams.POWER_EXPONENT_DEFAULT,
+                powerVRef = GyroMouseParams.POWER_VREF_DEFAULT,
+                naturalVHalf = GyroMouseParams.NATURAL_VHALF_DEFAULT,
+                verticalScale = GyroMouseParams.VERTICAL_SCALE_DEFAULT,
                 triggerActivates = true,
-                andCond = true,
+                activationHoldMs = 0,
+                andCond = false,
                 gyroTriggerButtons = new JoypadActionCodes[1]
                 {
                     JoypadActionCodes.AlwaysOn,
                 },
                 jitterCompensation = false,
                 smoothing = DEFAULT_SMOOTHING_ENABLED,
+                multiplierCompensation = GyroMouseParams.MULTIPLIER_COMPENSATION_DEFAULT,
+                accelerationMultiplier = GyroMouseParams.ACCELERATION_MULTIPLIER_DEFAULT,
+                verticalAccelerationMultiplier = GyroMouseParams.VERTICAL_ACCELERATION_MULTIPLIER_DEFAULT,
+                verticalAccelerationScaleMode = GyroMouseParams.VERTICAL_ACCELERATION_SCALE_MODE_DEFAULT,
+                triggerSensitivityModifier = new TriggerSensitivityModifierSettings(
+                    GyroMouseParams.SENSITIVITY_DEFAULT),
             };
 
             mouseParams.smoothingFilterSettings = new SmoothingFilterSettings();
             mouseParams.smoothingFilterSettings.Init();
+            mouseParams.orientation = GyroOrientationSettings.CreateDefault();
+            mouseParams.invert = GyroInvertSettings.CreateDefault();
             onlyOnPrimary = true;
         }
 
@@ -235,16 +381,7 @@ namespace DS4MapperTest.GyroActions
 
         public override void Prepare(Mapper mapper, ref GyroEventFrame gyroFrame, bool alterState = true)
         {
-            //const int deadZone = 28;
-            //const int deadZone = 18;
-            const double GYRO_MOUSE_COEFFICIENT = 0.025;
-            const double GYRO_MOUSE_OFFSET = 0.3;
-            //const double GYRO_MOUSE_OFFSET = 0.0;
-
             JoypadActionCodes[] tempTriggerButtons = mouseParams.gyroTriggerButtons;
-            //bool triggerButtonActive = tempTriggerButton == JoypadActionCodes.Empty ||
-            //    mapper.IsButtonActive(mouseParams.gyroTriggerButton);
-
             bool triggerButtonActive = mapper.IsButtonsActiveDraft(tempTriggerButtons,
                 mouseParams.andCond);
 
@@ -252,12 +389,10 @@ namespace DS4MapperTest.GyroActions
             if (!mouseParams.triggerActivates && triggerButtonActive)
             {
                 triggerActivated = false;
-                //previousTriggerActivated = triggerActivated;
             }
             else if (mouseParams.triggerActivates && !triggerButtonActive)
             {
                 triggerActivated = false;
-                //previousTriggerActivated = triggerActivated;
             }
 
             if (mouseParams.toggleAction)
@@ -275,9 +410,12 @@ namespace DS4MapperTest.GyroActions
                 previousTriggerActivated = triggerActivated;
             }
 
+            triggerActivated = activationHold.Update(triggerActivated,
+                mouseParams.activationHoldMs, gyroFrame.timeElapsed);
+
             if (!triggerActivated)
             {
-                mapper.MouseXRemainder = mapper.MouseYRemainder = 0.0;
+                mapper.ResetRouteMouseRemainder(MouseOutputRoute.Gyro);
                 mouseParams.smoothingFilterSettings.filterX.Filter(0.0, mapper.CurrentRate);
                 mouseParams.smoothingFilterSettings.filterY.Filter(0.0, mapper.CurrentRate);
 
@@ -286,53 +424,98 @@ namespace DS4MapperTest.GyroActions
                 return;
             }
 
-            double offset = gyroSensDefinition.mouseOffset;
-            //double coefficient = gyroSensDefinition.mouseCoefficient * mouseParams.sensitivity;
-            //double coefficient = (120.0 / 3.0) * mouseParams.sensitivity; // RWC / InGameSens * sens_multiplier
+            // Independent, trigger-gated final-output invert. Unrelated to the horizontal/
+            // vertical source selection above - it just flips whichever value ends up
+            // driving mouse X/Y, resolved here (where gyroFrame.timeElapsed is available
+            // for the hold-time debounce) and applied in Event().
+            bool invertTriggerButtonActive = mapper.IsButtonsActiveDraft(
+                mouseParams.invert.triggerButtons, mouseParams.invert.andCond);
 
-            // RWC / InGameSens * sens_multiplier
-            //double coefficient = (mouseParams.realWorldCalibration / mouseParams.inGameSens) * mouseParams.sensitivity;
+            bool invertRequested = true;
+            if (!mouseParams.invert.triggerActivates && invertTriggerButtonActive)
+            {
+                invertRequested = false;
+            }
+            else if (mouseParams.invert.triggerActivates && !invertTriggerButtonActive)
+            {
+                invertRequested = false;
+            }
+
+            invertRequested = invertActivationHold.Update(invertRequested,
+                mouseParams.invert.activationHoldMs, gyroFrame.timeElapsed);
+
+            invertActive = mouseParams.invert.enabled && invertRequested;
+
+            double offset = gyroSensDefinition.mouseOffset;
+
+            // Real world calibration over in-game sensitivity. The sensitivity
+            // multiplier is deliberately not folded in here, it arrives later as
+            // modSensMultiX/Y so that the accel curve can vary it per frame.
             double coefficient = (mouseParams.realWorldCalibration / mouseParams.inGameSens);
             double sensMulti = mouseParams.sensitivity;
+            double effectiveSensitivity = TriggerSensitivityModifier.Evaluate(
+                mouseParams.triggerSensitivityModifier, sensMulti,
+                mapper.GetNormalisedTriggerPosition(mouseParams.triggerSensitivityModifier.trigger));
+            double triggerSensitivityScale = sensMulti > 0.0
+                ? effectiveSensitivity / sensMulti : 1.0;
+            double verticalTriggerSensitivityScale = mouseParams.triggerSensitivityModifier.modifyVerticalSensitivity
+                ? triggerSensitivityScale : 1.0;
             double deadZone = mouseParams.deadzone;
 
             double timeElapsed = gyroFrame.timeElapsed;
-            double oldTimeElapsed = timeElapsed;
             timeElapsed = timeElapsed - (mapper.remainderCutoff(timeElapsed * 10000.0, 1.0) / 10000.0);
-            //Trace.WriteLine($"BEFORE: {oldTimeElapsed} | AFTER {timeElapsed}");
-            //Trace.WriteLine(timeElapsed);
-            //double timeElapsed = current.timeElapsed;
-            // Take possible lag state into account. Main routine will make sure to skip this method
-            //if (previous.timeElapsed <= 0.002)
-            //{
-            //    timeElapsed += previous.timeElapsed;
-            //    currentRate = 1.0 / timeElapsed;
-            //}
 
-            // Base speed 5 ms
-            //double tempDouble = timeElapsed * 3 * 66.67;
-            //double tempDouble = timeElapsed * 3 * gyroFrame.elapsedReference;
-            double tempDouble = timeElapsed * gyroFrame.elapsedReference;
-            int deltaX = mouseParams.useForXAxis == GyroMouseXAxisChoice.Yaw ?
-                gyroFrame.GyroYaw : gyroFrame.GyroRoll;
+            double tempDouble = 1.0;
 
-            int deltaY = gyroFrame.GyroPitch;
-            double tempAngle = Math.Atan2(-deltaY, deltaX);
+            double deltaAngVelX;
+            double deltaAngVelY;
+            GyroSpaceChoice activeSpace = mouseParams.orientation.gyroSpace;
+            if (activeSpace != GyroSpaceChoice.LocalSpace && !gyroFrame.GravValid)
+            {
+                // Gravity has not converged yet (first frames after connect).
+                activeSpace = GyroSpaceChoice.LocalSpace;
+            }
+
+            if (activeSpace == GyroSpaceChoice.LocalSpace)
+            {
+                deltaAngVelX = GyroOrientationResolver.Resolve(mouseParams.orientation.horizontal,
+                    gyroFrame.AngGyroYaw, gyroFrame.AngGyroRoll, gyroFrame.AngGyroPitch);
+                deltaAngVelY = GyroOrientationResolver.Resolve(mouseParams.orientation.vertical,
+                    gyroFrame.AngGyroYaw, gyroFrame.AngGyroRoll, gyroFrame.AngGyroPitch);
+            }
+            else
+            {
+                GyroMotionAxisAdapter.ToMotionSpace(mapper.DeviceType,
+                    gyroFrame.AngGyroYaw, gyroFrame.AngGyroPitch, gyroFrame.AngGyroRoll,
+                    gyroFrame.AccelXG, gyroFrame.AccelYG, gyroFrame.AccelZG,
+                    out double gmGyroX, out double gmGyroY, out double gmGyroZ,
+                    out _, out _, out _);
+
+                GyroSpaceResolver.Resolve(activeSpace,
+                    gmGyroX, gmGyroY, gmGyroZ,
+                    gyroFrame.GravX, gyroFrame.GravY, gyroFrame.GravZ,
+                    out double spaceH, out double spaceV);
+
+                GyroMotionAxisAdapter.FromMotionSpace(spaceH, spaceV,
+                    out deltaAngVelX, out deltaAngVelY);
+
+                // Gravity-space final-output invert. Local Space is untouched here: it
+                // applies its inversion per source inside GyroOrientationResolver above.
+                if (mouseParams.orientation.spaceInvertX) deltaAngVelX = -deltaAngVelX;
+                if (mouseParams.orientation.spaceInvertY) deltaAngVelY = -deltaAngVelY;
+            }
+
+            // Angle/deadzone basis, derived from the deg/s vector directly rather than
+            // from rounded raw counts. Rounding to int used to throw the angle off for
+            // small movements; the space output is not integral so we must not round.
+            double tempAngle = Math.Atan2(-deltaAngVelY, deltaAngVelX);
             double normX = Math.Abs(Math.Cos(tempAngle));
             double normY = Math.Abs(Math.Sin(tempAngle));
-            int signX = Math.Sign(deltaX);
-            int signY = Math.Sign(deltaY);
-
-            double deltaAngVelX = (mouseParams.useForXAxis == GyroMouseXAxisChoice.Yaw ?
-                gyroFrame.AngGyroYaw : gyroFrame.AngGyroRoll);
-            double deltaAngVelY = gyroFrame.AngGyroPitch;
-
-            //Trace.WriteLine($"{deltaX} {deltaY}");
+            int signX = Math.Sign(deltaAngVelX);
+            int signY = Math.Sign(deltaAngVelY);
 
             double deadzoneX = Math.Abs(normX * deadZone);
             double deadzoneY = Math.Abs(normY * deadZone);
-
-            //Trace.WriteLine($"{gyroFrame.AngGyroYaw} {deltaX} {deadZone} {deadzoneX} {deadzoneY}");
 
             if (Math.Abs(deltaAngVelX) > deadzoneX)
             {
@@ -352,24 +535,23 @@ namespace DS4MapperTest.GyroActions
                 deltaAngVelY = 0;
             }
 
-            //double slope = (1.0 - 0.40) / (11.25 - 0.0);
-            //double intercept = slope - 0.40;
-            //double dps_test = 180.0 / 16.0;
+            if (mouseParams.verticalDeadZone > 0.0 && Math.Abs(deltaAngVelY) < mouseParams.verticalDeadZone) deltaAngVelY = 0;
 
-            //if (deltaAngVelX != 0 && (deltaAngVelX * signX) < (dps_test * normX))
-            //{
-            //    deltaAngVelX = ((slope * Math.Abs(deltaAngVelX) - intercept) * deltaAngVelX);
-            //    //Trace.WriteLine($"DANGEROUS: {deltaAngVelX}");
-            //}
+            AngleSnapping.Apply(ref deltaAngVelX, ref deltaAngVelY,
+                mouseParams.gyroAngleSnapDegrees, mouseParams.gyroSmoothAngleSnap);
 
-            //if (deltaAngVelY != 0 && (deltaAngVelY * signY) < (dps_test * normY))
-            //{
-            //    deltaAngVelY = ((slope * Math.Abs(deltaAngVelY) - intercept) * deltaAngVelY);
-            //}
-
-            //double finalCoefficient = coefficient * sensMulti;
-            const double minThreshold = 0.0; // dps
-            const double maxThreshold = 11.25; // dps
+            if (mouseParams.gyroAngleSnapDegrees > 0.0)
+            {
+                double snappedMagnitude = Math.Sqrt((deltaAngVelX * deltaAngVelX) +
+                    (deltaAngVelY * deltaAngVelY));
+                if (snappedMagnitude > 0.0)
+                {
+                    normX = Math.Abs(deltaAngVelX) / snappedMagnitude;
+                    normY = Math.Abs(deltaAngVelY) / snappedMagnitude;
+                    signX = Math.Sign(deltaAngVelX);
+                    signY = Math.Sign(deltaAngVelY);
+                }
+            }
 
             double modSensMultiX = 1.0;
             double modSensMultiY = 1.0;
@@ -380,29 +562,23 @@ namespace DS4MapperTest.GyroActions
             }
             else
             {
-                double activeMinThreshold = mouseParams.minThreshold < mouseParams.maxGyroThreshold ?
-                mouseParams.minThreshold : mouseParams.maxGyroThreshold;
-                double activeMaxThreshold = mouseParams.maxGyroThreshold > mouseParams.minThreshold ?
-                    mouseParams.maxGyroThreshold : mouseParams.minGyroThreshold;
+                double activeMinThreshold = Math.Min(mouseParams.minGyroThreshold,
+                    mouseParams.maxGyroThreshold);
+                double activeMaxThreshold = Math.Max(mouseParams.minGyroThreshold,
+                    mouseParams.maxGyroThreshold);
                 double minXSens = mouseParams.minAccelXSens;
                 double maxXSens = mouseParams.maxAccelXSens;
                 double minYSens = mouseParams.minAccelYSens;
                 double maxYSens = mouseParams.maxAccelYSens;
 
-                //double modSensMulti = 1.0;
-                //double modSensMulti = minSens;
                 modSensMultiX = minXSens;
                 modSensMultiY = minYSens;
 
                 double minThresSquared = activeMinThreshold * activeMinThreshold;
                 double distSquared = (deltaAngVelX * deltaAngVelX) + (deltaAngVelY * deltaAngVelY);
-                bool isPastMinThreshold = distSquared >= activeMinThreshold;
+                bool isPastMinThreshold = distSquared >= minThresSquared;
                 if (isPastMinThreshold)
                 {
-                    //double alphaX = deltaAngVelX / dps_test;
-                    //double alphaY = deltaAngVelY / dps_test;
-
-                    //double dps_test = 180.0 / 16.0; // ~11.25 dps
                     double dps_test = activeMaxThreshold - activeMinThreshold;
                     double dpsTestSquared = dps_test * dps_test;
                     double dist = Math.Sqrt(distSquared);
@@ -474,28 +650,31 @@ namespace DS4MapperTest.GyroActions
                         default: break;
                     }
 
-                    //Trace.WriteLine($"{deltaAngVelX} {deltaAngVelY} {distSquared} {alpha}");
-                    //modSensMulti = 0.4 + (1.0 - 0.4) * alpha;
                     if (!filled)
                     {
                         modSensMultiX = minXSens + (maxXSens - minXSens) * alpha;
                         modSensMultiY = minYSens + (maxYSens - minYSens) * alpha;
                     }
                 }
-                //else if (isPastMinThreshold)
-                //{
-                //    modSensMultiX = maxXSens;
-                //    modSensMultiY = maxYSens;
-                //}
             }
 
             // Find degrees displacement for gamepad poll
             double xAng = deltaAngVelX * timeElapsed;
             double yAng = deltaAngVelY * timeElapsed;
 
-            //double finalCoefficient = coefficient * sensMulti * modSensMulti;
             double finalCoefficient = coefficient * modSensMultiX;
             double finalCoefficientY = coefficient * modSensMultiY;
+            finalCoefficient *= triggerSensitivityScale;
+            finalCoefficientY *= verticalTriggerSensitivityScale;
+            if (mouseParams.multiplierCompensation)
+            {
+                double accelMultiplier = Math.Clamp(mouseParams.accelerationMultiplier,
+                    0.01, 100.0);
+                double verticalAccelMultiplier = Math.Clamp(
+                    mouseParams.verticalAccelerationMultiplier, 0.01, 100.0);
+                finalCoefficient /= accelMultiplier;
+                finalCoefficientY /= verticalAccelMultiplier;
+            }
 
             xMotion = deltaAngVelX != 0 ? finalCoefficient * (xAng * tempDouble)
                 + (normX * (offset * signX)) : 0;
@@ -503,9 +682,15 @@ namespace DS4MapperTest.GyroActions
             yMotion = deltaAngVelY != 0 ? finalCoefficientY * (yAng * tempDouble)
                 + (normY * (offset * signY)) : 0;
 
-            if (mouseParams.verticalScale != 1.0)
+            if (mouseParams.accelCurve == GyroMouseAccelCurveChoice.None)
             {
-                yMotion = mouseParams.verticalScale * yMotion;
+                double vertMultiplier = mouseParams.sensitivity > 0.0
+                    ? mouseParams.verticalScale / mouseParams.sensitivity
+                    : mouseParams.verticalScale;
+                if (vertMultiplier != 1.0)
+                {
+                    yMotion = vertMultiplier * yMotion;
+                }
             }
 
             if (mouseParams.jitterCompensation)
@@ -545,15 +730,19 @@ namespace DS4MapperTest.GyroActions
         public override void Event(Mapper mapper)
         {
             double tempX = xMotion, tempY = yMotion;
-            /*if (mouseParams.smoothing)
-            {
-                tempX = smoothFilter.Filter(xMotion, mapper.CurrentRate);
-                tempY = smoothFilter.Filter(yMotion, mapper.CurrentRate);
-            }
-            */
 
-            double outXMotion = !mouseParams.invertX ? tempX : -1.0 * tempX;
-            double outYMotion = !mouseParams.invertY ? tempY : -1.0 * tempY;
+            // Orientation-level inversion is resolved at the source in Prepare() via
+            // GyroOrientationResolver, not here - legacy invertX/invertY are migration-only
+            // and not read here. The independent, trigger-gated Gyro Invert feature flips
+            // the final resolved output instead, applied here based on invertActive
+            // (computed in Prepare(), where the trigger/hold-time state is evaluated).
+            double outXMotion = tempX;
+            double outYMotion = tempY;
+
+            if (invertActive)
+            {
+                GyroInvertApplier.Apply(mouseParams.invert.axisChoice, ref outXMotion, ref outYMotion);
+            }
 
             bool mouseSync = true;
             if (mouseParams.minThreshold != 1.0)
@@ -562,37 +751,25 @@ namespace DS4MapperTest.GyroActions
                 if (distSqu <= (mouseParams.minThreshold * mouseParams.minThreshold))
                 {
                     outXMotion = 0.0; outYMotion = 0.0;
-                    mapper.MouseXRemainder = outXMotion;
-                    mapper.MouseYRemainder = outYMotion;
+                    mapper.ResetRouteMouseRemainder(MouseOutputRoute.Gyro);
                     mouseSync = false;
                 }
             }
 
-            //mapper.MouseX = outXMotion; mapper.MouseY = outYMotion;
-            //mapper.MouseSync = mouseSync;
-
             if (mouseParams.smoothing)
             {
-                //mapper.MouseX = outXMotion; mapper.MouseY = outYMotion;
                 mapper.GenerateMouseEventFilteredV2(mouseParams.smoothingFilterSettings.filterX,
                     mouseParams.smoothingFilterSettings.filterY,
                     ref outXMotion, ref outYMotion);
 
-                mapper.MouseX += outXMotion; mapper.MouseY += outYMotion;
-                mapper.MouseSync = mouseSync;
-                //mapper.MouseEventFired = true;
-
-                //tempX = mouseParams.smoothingFilterSettings.filterX.Filter(tempX,
-                //    mapper.CurrentRate);
-
-                //tempY = mouseParams.smoothingFilterSettings.filterY.Filter(tempY,
-                //    mapper.CurrentRate);
+                mapper.AddRouteRelativeMouseMotion(MouseOutputRoute.Gyro, outXMotion, outYMotion);
+                mapper.SetRouteRelativeMouseSync(MouseOutputRoute.Gyro, mouseSync);
             }
             else
             {
                 // Allow mapper to handle event
-                mapper.MouseX += outXMotion; mapper.MouseY += outYMotion;
-                mapper.MouseSync = mouseSync;
+                mapper.AddRouteRelativeMouseMotion(MouseOutputRoute.Gyro, outXMotion, outYMotion);
+                mapper.SetRouteRelativeMouseSync(MouseOutputRoute.Gyro, mouseSync);
             }
 
             if (xMotion != 0.0 || yMotion != 0.0)
@@ -614,7 +791,6 @@ namespace DS4MapperTest.GyroActions
             activeEvent = false;
             toggleActiveState = false;
             previousTriggerActivated = false;
-            //smoothFilter.Reset();
             mouseParams.smoothingFilterSettings.filterX.Reset();
             mouseParams.smoothingFilterSettings.filterY.Reset();
         }
@@ -629,7 +805,6 @@ namespace DS4MapperTest.GyroActions
 
             if (!useParentSmoothingFilter)
             {
-                //smoothFilter.Reset();
                 mouseParams.smoothingFilterSettings.filterX.Reset();
                 mouseParams.smoothingFilterSettings.filterY.Reset();
             }
@@ -637,7 +812,7 @@ namespace DS4MapperTest.GyroActions
 
         public override void BlankEvent(Mapper mapper)
         {
-            mapper.MouseXRemainder = mapper.MouseYRemainder = 0.0;
+            mapper.ResetRouteMouseRemainder(MouseOutputRoute.Gyro);
             active = false;
             activeEvent = false;
             toggleActiveState = false;
@@ -645,7 +820,6 @@ namespace DS4MapperTest.GyroActions
 
             if (!useParentSmoothingFilter)
             {
-                //smoothFilter.Reset();
                 mouseParams.smoothingFilterSettings.filterX.Reset();
                 mouseParams.smoothingFilterSettings.filterY.Reset();
             }
@@ -675,7 +849,6 @@ namespace DS4MapperTest.GyroActions
                 IEnumerable<string> useParentProList =
                     fullPropertySet.Except(changedProperties);
 
-                //bool updateSmoothing = false;
                 foreach (string parentPropType in useParentProList)
                 {
                     switch(parentPropType)
@@ -686,11 +859,23 @@ namespace DS4MapperTest.GyroActions
                         case PropertyKeyStrings.DEAD_ZONE:
                             mouseParams.deadzone = tempMouseAction.mouseParams.deadzone;
                             break;
+                        case PropertyKeyStrings.VERTICAL_DEAD_ZONE:
+                            mouseParams.verticalDeadZone = tempMouseAction.mouseParams.verticalDeadZone;
+                            break;
+                        case PropertyKeyStrings.ANGLE_SNAP_DEGREES:
+                            mouseParams.gyroAngleSnapDegrees = tempMouseAction.mouseParams.gyroAngleSnapDegrees;
+                            break;
+                        case PropertyKeyStrings.SMOOTH_ANGLE_SNAP:
+                            mouseParams.gyroSmoothAngleSnap = tempMouseAction.mouseParams.gyroSmoothAngleSnap;
+                            break;
                         case PropertyKeyStrings.TRIGGER_BUTTONS:
                             mouseParams.gyroTriggerButtons = tempMouseAction.mouseParams.gyroTriggerButtons;
                             break;
                         case PropertyKeyStrings.TRIGGER_ACTIVATE:
                             mouseParams.triggerActivates = tempMouseAction.mouseParams.triggerActivates;
+                            break;
+                        case PropertyKeyStrings.ACTIVATION_HOLD_MS:
+                            mouseParams.activationHoldMs = tempMouseAction.mouseParams.activationHoldMs;
                             break;
                         case PropertyKeyStrings.TRIGGER_EVAL_COND:
                             mouseParams.andCond = tempMouseAction.mouseParams.andCond;
@@ -746,6 +931,57 @@ namespace DS4MapperTest.GyroActions
                         case PropertyKeyStrings.X_AXIS:
                             mouseParams.useForXAxis = tempMouseAction.mouseParams.useForXAxis;
                             break;
+                        case PropertyKeyStrings.GYRO_SPACE:
+                            mouseParams.orientation.gyroSpace = tempMouseAction.mouseParams.orientation.gyroSpace;
+                            break;
+                        case PropertyKeyStrings.HORIZONTAL_CONTROL:
+                            mouseParams.orientation.horizontal.source = tempMouseAction.mouseParams.orientation.horizontal.source;
+                            break;
+                        case PropertyKeyStrings.VERTICAL_CONTROL:
+                            mouseParams.orientation.vertical.source = tempMouseAction.mouseParams.orientation.vertical.source;
+                            break;
+                        case PropertyKeyStrings.HORIZONTAL_INVERT:
+                            mouseParams.orientation.horizontal.invertSingle = tempMouseAction.mouseParams.orientation.horizontal.invertSingle;
+                            break;
+                        case PropertyKeyStrings.VERTICAL_INVERT:
+                            mouseParams.orientation.vertical.invertSingle = tempMouseAction.mouseParams.orientation.vertical.invertSingle;
+                            break;
+                        case PropertyKeyStrings.HORIZONTAL_YAW_CONTRIBUTION:
+                            mouseParams.orientation.horizontal.yawContribution = tempMouseAction.mouseParams.orientation.horizontal.yawContribution;
+                            break;
+                        case PropertyKeyStrings.HORIZONTAL_ROLL_CONTRIBUTION:
+                            mouseParams.orientation.horizontal.rollContribution = tempMouseAction.mouseParams.orientation.horizontal.rollContribution;
+                            break;
+                        case PropertyKeyStrings.VERTICAL_YAW_CONTRIBUTION:
+                            mouseParams.orientation.vertical.yawContribution = tempMouseAction.mouseParams.orientation.vertical.yawContribution;
+                            break;
+                        case PropertyKeyStrings.VERTICAL_ROLL_CONTRIBUTION:
+                            mouseParams.orientation.vertical.rollContribution = tempMouseAction.mouseParams.orientation.vertical.rollContribution;
+                            break;
+                        case PropertyKeyStrings.SPACE_INVERT_X:
+                            mouseParams.orientation.spaceInvertX = tempMouseAction.mouseParams.orientation.spaceInvertX;
+                            break;
+                        case PropertyKeyStrings.SPACE_INVERT_Y:
+                            mouseParams.orientation.spaceInvertY = tempMouseAction.mouseParams.orientation.spaceInvertY;
+                            break;
+                        case PropertyKeyStrings.INVERT_GYRO_ENABLED:
+                            mouseParams.invert.enabled = tempMouseAction.mouseParams.invert.enabled;
+                            break;
+                        case PropertyKeyStrings.INVERT_GYRO_AXIS:
+                            mouseParams.invert.axisChoice = tempMouseAction.mouseParams.invert.axisChoice;
+                            break;
+                        case PropertyKeyStrings.INVERT_GYRO_TRIGGER_BUTTONS:
+                            mouseParams.invert.triggerButtons = tempMouseAction.mouseParams.invert.triggerButtons;
+                            break;
+                        case PropertyKeyStrings.INVERT_GYRO_TRIGGER_ACTIVATES:
+                            mouseParams.invert.triggerActivates = tempMouseAction.mouseParams.invert.triggerActivates;
+                            break;
+                        case PropertyKeyStrings.INVERT_GYRO_TRIGGER_EVAL_COND:
+                            mouseParams.invert.andCond = tempMouseAction.mouseParams.invert.andCond;
+                            break;
+                        case PropertyKeyStrings.INVERT_GYRO_ACTIVATION_HOLD_MS:
+                            mouseParams.invert.activationHoldMs = tempMouseAction.mouseParams.invert.activationHoldMs;
+                            break;
                         case PropertyKeyStrings.MIN_THRESHOLD:
                             mouseParams.minThreshold = tempMouseAction.mouseParams.minThreshold;
                             break;
@@ -760,26 +996,27 @@ namespace DS4MapperTest.GyroActions
                             mouseParams.smoothing = tempMouseAction.mouseParams.smoothing;
                             break;
                         case PropertyKeyStrings.SMOOTHING_FILTER:
-                            mouseParams.smoothingFilterSettings = tempMouseAction.mouseParams.smoothingFilterSettings;
+                            mouseParams.smoothingFilterSettings.minCutOff = tempMouseAction.mouseParams.smoothingFilterSettings.minCutOff;
+                            mouseParams.smoothingFilterSettings.beta = tempMouseAction.mouseParams.smoothingFilterSettings.beta;
+                            mouseParams.smoothingFilterSettings.UpdateSmoothingFilters();
                             useParentSmoothingFilter = true;
                             break;
-                        //case PropertyKeyStrings.SMOOTHING_MINCUTOFF:
-                        //    mouseParams.oneEuroMinCutoff = tempMouseAction.mouseParams.oneEuroMinCutoff;
-                        //    updateSmoothing = true;
-                        //    break;
-                        //case PropertyKeyStrings.SMOOTHING_MINBETA:
-                        //    mouseParams.oneEuroMinBeta = tempMouseAction.mouseParams.oneEuroMinBeta;
-                        //    updateSmoothing = true;
-                        //    break;
+                        case PropertyKeyStrings.MULTIPLIER_COMPENSATION:
+                            mouseParams.multiplierCompensation = tempMouseAction.mouseParams.multiplierCompensation;
+                            break;
+                        case PropertyKeyStrings.ACCELERATION_MULTIPLIER:
+                            mouseParams.accelerationMultiplier = tempMouseAction.mouseParams.accelerationMultiplier;
+                            break;
+                        case PropertyKeyStrings.VERTICAL_ACCELERATION_MULTIPLIER:
+                            mouseParams.verticalAccelerationMultiplier = tempMouseAction.mouseParams.verticalAccelerationMultiplier;
+                            break;
+                        case PropertyKeyStrings.VERTICAL_ACCELERATION_SCALE_MODE:
+                            mouseParams.verticalAccelerationScaleMode = tempMouseAction.mouseParams.verticalAccelerationScaleMode;
+                            break;
                         default:
                             break;
                     }
                 }
-
-                //if (updateSmoothing)
-                //{
-                //    UpdateSmoothingFilter();
-                //}
             }
         }
 
@@ -803,7 +1040,6 @@ namespace DS4MapperTest.GyroActions
 
             GyroMouse tempMouseAction = parentAction as GyroMouse;
 
-            //bool updateSmoothing = false;
             switch (propertyName)
             {
                 case PropertyKeyStrings.NAME:
@@ -812,11 +1048,23 @@ namespace DS4MapperTest.GyroActions
                 case PropertyKeyStrings.DEAD_ZONE:
                     mouseParams.deadzone = tempMouseAction.mouseParams.deadzone;
                     break;
+                case PropertyKeyStrings.VERTICAL_DEAD_ZONE:
+                    mouseParams.verticalDeadZone = tempMouseAction.mouseParams.verticalDeadZone;
+                    break;
+                case PropertyKeyStrings.ANGLE_SNAP_DEGREES:
+                    mouseParams.gyroAngleSnapDegrees = tempMouseAction.mouseParams.gyroAngleSnapDegrees;
+                    break;
+                case PropertyKeyStrings.SMOOTH_ANGLE_SNAP:
+                    mouseParams.gyroSmoothAngleSnap = tempMouseAction.mouseParams.gyroSmoothAngleSnap;
+                    break;
                 case PropertyKeyStrings.TRIGGER_BUTTONS:
                     mouseParams.gyroTriggerButtons = tempMouseAction.mouseParams.gyroTriggerButtons;
                     break;
                 case PropertyKeyStrings.TRIGGER_ACTIVATE:
                     mouseParams.triggerActivates = tempMouseAction.mouseParams.triggerActivates;
+                    break;
+                case PropertyKeyStrings.ACTIVATION_HOLD_MS:
+                    mouseParams.activationHoldMs = tempMouseAction.mouseParams.activationHoldMs;
                     break;
                 case PropertyKeyStrings.TRIGGER_EVAL_COND:
                     mouseParams.andCond = tempMouseAction.mouseParams.andCond;
@@ -872,6 +1120,57 @@ namespace DS4MapperTest.GyroActions
                 case PropertyKeyStrings.X_AXIS:
                     mouseParams.useForXAxis = tempMouseAction.mouseParams.useForXAxis;
                     break;
+                case PropertyKeyStrings.GYRO_SPACE:
+                    mouseParams.orientation.gyroSpace = tempMouseAction.mouseParams.orientation.gyroSpace;
+                    break;
+                case PropertyKeyStrings.HORIZONTAL_CONTROL:
+                    mouseParams.orientation.horizontal.source = tempMouseAction.mouseParams.orientation.horizontal.source;
+                    break;
+                case PropertyKeyStrings.VERTICAL_CONTROL:
+                    mouseParams.orientation.vertical.source = tempMouseAction.mouseParams.orientation.vertical.source;
+                    break;
+                case PropertyKeyStrings.HORIZONTAL_INVERT:
+                    mouseParams.orientation.horizontal.invertSingle = tempMouseAction.mouseParams.orientation.horizontal.invertSingle;
+                    break;
+                case PropertyKeyStrings.VERTICAL_INVERT:
+                    mouseParams.orientation.vertical.invertSingle = tempMouseAction.mouseParams.orientation.vertical.invertSingle;
+                    break;
+                case PropertyKeyStrings.HORIZONTAL_YAW_CONTRIBUTION:
+                    mouseParams.orientation.horizontal.yawContribution = tempMouseAction.mouseParams.orientation.horizontal.yawContribution;
+                    break;
+                case PropertyKeyStrings.HORIZONTAL_ROLL_CONTRIBUTION:
+                    mouseParams.orientation.horizontal.rollContribution = tempMouseAction.mouseParams.orientation.horizontal.rollContribution;
+                    break;
+                case PropertyKeyStrings.VERTICAL_YAW_CONTRIBUTION:
+                    mouseParams.orientation.vertical.yawContribution = tempMouseAction.mouseParams.orientation.vertical.yawContribution;
+                    break;
+                case PropertyKeyStrings.VERTICAL_ROLL_CONTRIBUTION:
+                    mouseParams.orientation.vertical.rollContribution = tempMouseAction.mouseParams.orientation.vertical.rollContribution;
+                    break;
+                case PropertyKeyStrings.SPACE_INVERT_X:
+                    mouseParams.orientation.spaceInvertX = tempMouseAction.mouseParams.orientation.spaceInvertX;
+                    break;
+                case PropertyKeyStrings.SPACE_INVERT_Y:
+                    mouseParams.orientation.spaceInvertY = tempMouseAction.mouseParams.orientation.spaceInvertY;
+                    break;
+                case PropertyKeyStrings.INVERT_GYRO_ENABLED:
+                    mouseParams.invert.enabled = tempMouseAction.mouseParams.invert.enabled;
+                    break;
+                case PropertyKeyStrings.INVERT_GYRO_AXIS:
+                    mouseParams.invert.axisChoice = tempMouseAction.mouseParams.invert.axisChoice;
+                    break;
+                case PropertyKeyStrings.INVERT_GYRO_TRIGGER_BUTTONS:
+                    mouseParams.invert.triggerButtons = tempMouseAction.mouseParams.invert.triggerButtons;
+                    break;
+                case PropertyKeyStrings.INVERT_GYRO_TRIGGER_ACTIVATES:
+                    mouseParams.invert.triggerActivates = tempMouseAction.mouseParams.invert.triggerActivates;
+                    break;
+                case PropertyKeyStrings.INVERT_GYRO_TRIGGER_EVAL_COND:
+                    mouseParams.invert.andCond = tempMouseAction.mouseParams.invert.andCond;
+                    break;
+                case PropertyKeyStrings.INVERT_GYRO_ACTIVATION_HOLD_MS:
+                    mouseParams.invert.activationHoldMs = tempMouseAction.mouseParams.invert.activationHoldMs;
+                    break;
                 case PropertyKeyStrings.MIN_THRESHOLD:
                     mouseParams.minThreshold = tempMouseAction.mouseParams.minThreshold;
                     break;
@@ -884,28 +1183,28 @@ namespace DS4MapperTest.GyroActions
                     break;
                 case PropertyKeyStrings.SMOOTHING_ENABLED:
                     mouseParams.smoothing = tempMouseAction.mouseParams.smoothing;
-                    //updateSmoothing = true;
                     break;
                 case PropertyKeyStrings.SMOOTHING_FILTER:
-                    mouseParams.smoothingFilterSettings = tempMouseAction.mouseParams.smoothingFilterSettings;
+                    mouseParams.smoothingFilterSettings.minCutOff = tempMouseAction.mouseParams.smoothingFilterSettings.minCutOff;
+                    mouseParams.smoothingFilterSettings.beta = tempMouseAction.mouseParams.smoothingFilterSettings.beta;
+                    mouseParams.smoothingFilterSettings.UpdateSmoothingFilters();
                     useParentSmoothingFilter = true;
                     break;
-                //case PropertyKeyStrings.SMOOTHING_MINCUTOFF:
-                //    mouseParams.oneEuroMinCutoff = tempMouseAction.mouseParams.oneEuroMinCutoff;
-                //    updateSmoothing = true;
-                //    break;
-                //case PropertyKeyStrings.SMOOTHING_MINBETA:
-                //    mouseParams.oneEuroMinBeta = tempMouseAction.mouseParams.oneEuroMinBeta;
-                //    updateSmoothing = true;
-                //    break;
+                case PropertyKeyStrings.MULTIPLIER_COMPENSATION:
+                    mouseParams.multiplierCompensation = tempMouseAction.mouseParams.multiplierCompensation;
+                    break;
+                case PropertyKeyStrings.ACCELERATION_MULTIPLIER:
+                    mouseParams.accelerationMultiplier = tempMouseAction.mouseParams.accelerationMultiplier;
+                    break;
+                case PropertyKeyStrings.VERTICAL_ACCELERATION_MULTIPLIER:
+                    mouseParams.verticalAccelerationMultiplier = tempMouseAction.mouseParams.verticalAccelerationMultiplier;
+                    break;
+                case PropertyKeyStrings.VERTICAL_ACCELERATION_SCALE_MODE:
+                    mouseParams.verticalAccelerationScaleMode = tempMouseAction.mouseParams.verticalAccelerationScaleMode;
+                    break;
                 default:
                     break;
             }
-
-            //if (updateSmoothing)
-            //{
-            //    UpdateSmoothingFilter();
-            //}
         }
 
         private void ResetToggleActiveState()
@@ -913,11 +1212,5 @@ namespace DS4MapperTest.GyroActions
             toggleActiveState = false;
             previousTriggerActivated = false;
         }
-
-        //public void UpdateSmoothingFilter()
-        //{
-        //    smoothFilter = new OneEuroFilter(mouseParams.oneEuroMinCutoff,
-        //        mouseParams.oneEuroMinBeta);
-        //}
     }
 }

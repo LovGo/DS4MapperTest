@@ -9,7 +9,10 @@ using DS4MapperTest.DS4Library;
 using System.Windows.Threading;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.IO;
 using DS4MapperTest.JoyConLibrary;
+using DS4MapperTest.PhysicalMouse;
+using NLog;
 
 namespace DS4MapperTest
 {
@@ -35,6 +38,7 @@ namespace DS4MapperTest
 
     public class BackendManager
     {
+        private static readonly Logger logger = LogManager.GetCurrentClassLogger();
         public const int CONTROLLER_LIMIT = 8;
         private const bool JOYCON_JOINED = true;
         private const string DEFAULT_VKBM_IDENTIFIER = SendInputHandler.IDENTIFIER;
@@ -55,6 +59,7 @@ namespace DS4MapperTest
         public event EventHandler ServiceStarted;
         public event EventHandler PreServiceStop;
         public event EventHandler ServiceStopped;
+        public event EventHandler PhysicalMouseStatusChanged;
         //public event EventHandler HotplugFinished;
 
         private VirtualKBMBase virtualEventHandler;// = new FakerInputHandler();
@@ -62,6 +67,18 @@ namespace DS4MapperTest
 
         private VirtualKBMMapping eventInputMapping;// = new FakerInputMapping();
         public VirtualKBMMapping EventInputMapping => eventInputMapping;
+        private MouseOutputDispatcher mouseOutputDispatcher;
+        private readonly MouseOutputRoutingController mouseOutputRoutingController;
+        public MouseOutputRoutingController MouseOutputRoutingController =>
+            mouseOutputRoutingController;
+
+        // Phase-2 physical-mouse forwarding. Owned here (not by the WPF UI)
+        // so it starts/stops with the backend service regardless of which
+        // window, if any, is open. See PhysicalMouseService for the actual
+        // capture -> FakerInput wiring.
+        private readonly PhysicalMouseService physicalMouseService = new PhysicalMouseService();
+        public PhysicalMouseServiceStatus PhysicalMouseStatus => physicalMouseService.Status;
+        private readonly HidHideVisibilityManager hidHideVisibilityManager;
 
         private Dictionary<int, Mapper> mapperDict;
         public Dictionary<int, Mapper> MapperDict
@@ -77,6 +94,13 @@ namespace DS4MapperTest
         public InputDeviceBase[] ControllerList
         {
             get => controllerList;
+        }
+
+        public DeviceReaderBase GetDeviceReader(InputDeviceBase device)
+        {
+            if (device == null) return null;
+            deviceReadersMap.TryGetValue(device, out DeviceReaderBase reader);
+            return reader;
         }
 
         private Dictionary<InputDeviceType, ProfileList> deviceProfileListDict;
@@ -111,6 +135,25 @@ namespace DS4MapperTest
         {
             _argParser = argParse;
             this.appGlobal = appGlobal;
+            mouseOutputRoutingController = new MouseOutputRoutingController(appGlobal);
+            _logCb = (level, message) =>
+            {
+                string text = $"VIIPER[{level}] {message}";
+                if (level >= VIIPERLogLevel.Error)
+                {
+                    logger.Error(text);
+                }
+                else if (level >= VIIPERLogLevel.Warn)
+                {
+                    logger.Warn(text);
+                }
+                else
+                {
+                    logger.Info(text);
+                }
+            };
+            physicalMouseService.StatusChanged += (_, _) => PhysicalMouseStatusChanged?.Invoke(this, EventArgs.Empty);
+            hidHideVisibilityManager = new HidHideVisibilityManager(appGlobal);
 
             mapperDict = new Dictionary<int, Mapper>();
             deviceReadersMap = new Dictionary<InputDeviceBase, DeviceReaderBase>();
@@ -174,12 +217,103 @@ namespace DS4MapperTest
         nuint serverHandle = 0;
         private readonly VIIPERLogCallbackDelegate _logCb;
         private readonly Xbox360RumbleCallbackDelegate _rumbleCb;
+
+        private void EnsureUsbipAvailable()
+        {
+            string currentPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+            List<string> candidateDirs = new List<string>()
+            {
+                AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "USBip"),
+            };
+
+            List<string> updatedDirs = new List<string>();
+            if (!string.IsNullOrWhiteSpace(currentPath))
+            {
+                updatedDirs.AddRange(currentPath.Split(Path.PathSeparator).
+                    Where(item => !string.IsNullOrWhiteSpace(item)));
+            }
+
+            bool foundUsbip = false;
+            foreach (string candidateDir in candidateDirs)
+            {
+                if (string.IsNullOrWhiteSpace(candidateDir) || !Directory.Exists(candidateDir))
+                {
+                    continue;
+                }
+
+                string usbipPath = Path.Combine(candidateDir, "usbip.exe");
+                if (!File.Exists(usbipPath))
+                {
+                    continue;
+                }
+
+                foundUsbip = true;
+                if (!updatedDirs.Any(item => string.Equals(item.TrimEnd(Path.DirectorySeparatorChar),
+                    candidateDir, StringComparison.OrdinalIgnoreCase)))
+                {
+                    updatedDirs.Insert(0, candidateDir);
+                }
+            }
+
+            if (foundUsbip)
+            {
+                string newPath = string.Join(Path.PathSeparator.ToString(), updatedDirs);
+                Environment.SetEnvironmentVariable("PATH", newPath);
+                logger.Info($"USBIP runtime available via PATH. Search roots={string.Join(";", candidateDirs.Where(Directory.Exists))}");
+            }
+            else
+            {
+                logger.Warn("USBIP runtime not found in app directory or Program Files\\USBip");
+            }
+        }
+
+        public bool ApplyPhysicalMouseSettings(bool enabled, string stableDeviceId, out string validationMessage)
+        {
+            validationMessage = null;
+            if (enabled && string.IsNullOrEmpty(stableDeviceId))
+            {
+                validationMessage = "Select a physical mouse before enabling forwarding.";
+                return false;
+            }
+
+            bool isVirtual = false;
+            try
+            {
+                isVirtual = enabled && Util.CheckIfVirtualDevice(stableDeviceId);
+            }
+            catch
+            {
+                // The service repeats this best-effort guard. A lookup
+                // failure must not destabilise controller/gyro output.
+            }
+            if (isVirtual)
+            {
+                validationMessage = "The selected device is virtual and cannot be captured.";
+                return false;
+            }
+
+            appGlobal.appSettings.PhysicalMouseForwardingEnabled = enabled;
+            appGlobal.appSettings.SelectedPhysicalMouseId = stableDeviceId ?? string.Empty;
+            appGlobal.SaveAppSettings();
+
+            if (isRunning)
+            {
+                physicalMouseService.Reconfigure(enabled, stableDeviceId,
+                    mouseOutputDispatcher);
+            }
+            return true;
+        }
+
         public void Start()
         {
+            if (isRunning || changingService) return;
+
             LogDebug("Starting service");
             changingService = true;
 
             InitOutputKBMHandler();
+            EnsureUsbipAvailable();
 
             // Change thread affinity of bus object to not be tied
             // to GUI thread
@@ -207,6 +341,17 @@ namespace DS4MapperTest
             {
                 LogDebug($"VIIPER connection established");
             }
+
+            mouseOutputDispatcher = new MouseOutputDispatcher(appGlobal,
+                virtualEventHandler, eventInputMapping, serverHandle);
+            mouseOutputRoutingController.AttachRuntime(mouseOutputDispatcher,
+                isServiceRunning: false);
+
+            bool physicalMouseEnabled = appGlobal.appSettings?.PhysicalMouseForwardingEnabled ?? false;
+            string selectedPhysicalMouseId = appGlobal.appSettings?.SelectedPhysicalMouseId;
+            physicalMouseService.Start(physicalMouseEnabled, selectedPhysicalMouseId,
+                mouseOutputDispatcher);
+            LogDebug($"Physical mouse forwarding: {physicalMouseService.Status}");
 
             Thread temper = new Thread(() =>
             {
@@ -298,10 +443,10 @@ namespace DS4MapperTest
                 int tempInd = ind;
                 //testMapper.VIIPERDeviceHanle = deviceHandle;
                 testMapper.PassVIIPERConnection(serverHandle);
+                testMapper.PassMouseOutputDispatcher(mouseOutputDispatcher);
                 //testMapper.Start(vigemTestClient, virtualEventHandler, eventInputMapping);
                 testMapper.Start(virtualEventHandler, eventInputMapping);
-                testMapper.ProfileChanged += (object sender, string e) =>
-                {
+                testMapper.ProfileChanged += (object sender, string e) => {
                     appGlobal.activeProfiles[tempInd] = e;
                     appGlobal.SaveControllerDeviceSettings(device, device.DeviceOptions);
                 };
@@ -312,12 +457,14 @@ namespace DS4MapperTest
 
                 controllerList[ind] = device;
                 LogDebug($"Plugged in controller #{ind + 1} ({device.Serial})");
+                RefreshControllerVisibilityState();
 
                 ind++;
             }
 
             isRunning = true;
             changingService = false;
+            mouseOutputRoutingController.SetServiceRunning(true);
 
             ServiceStarted?.Invoke(this, EventArgs.Empty);
 
@@ -326,32 +473,19 @@ namespace DS4MapperTest
 
         private void InitOutputKBMHandler()
         {
-            if (!string.IsNullOrEmpty(_argParser.VirtualkbmHandler))
+            string configuredHandlerIdentifier =
+                DetermineConfiguredOutputHandlerIdentifier(_argParser, appGlobal);
+
+            switch (configuredHandlerIdentifier)
             {
-                switch (_argParser.VirtualkbmHandler)
-                {
-                    case "fakerinput":
-                        virtualEventHandler = new FakerInputHandler();
-                        virtualEventHandler.version = new Version(appGlobal.fakerInputVersion);
-                        break;
-                    case "sendinput":
-                    default:
-                        virtualEventHandler = new SendInputHandler();
-                        break;
-                }
-            }
-            else
-            {
-                if (appGlobal.fakerInputInstalled)
-                {
+                case FakerInputHandler.IDENTIFIER:
                     virtualEventHandler = new FakerInputHandler();
                     virtualEventHandler.version = new Version(appGlobal.fakerInputVersion);
-                }
-                else
-                {
-                    // Use fallback handler
+                    break;
+                case SendInputHandler.IDENTIFIER:
+                default:
                     virtualEventHandler = GetFallbackKBMHandler();
-                }
+                    break;
             }
 
             bool checkConnect = virtualEventHandler.Connect();
@@ -379,6 +513,26 @@ namespace DS4MapperTest
             ProfileSerializer.EventInputMapper = eventInputMapping;
 
             LogDebug($"KBM Event Handler: {virtualEventHandler.GetFullDisplayName()}");
+        }
+
+        internal static string DetermineConfiguredOutputHandlerIdentifier(
+            ArgumentParser argParser, AppGlobalData appGlobal)
+        {
+            if (!string.IsNullOrEmpty(argParser?.VirtualkbmHandler))
+            {
+                switch (argParser.VirtualkbmHandler)
+                {
+                    case "fakerinput":
+                        return FakerInputHandler.IDENTIFIER;
+                    case "sendinput":
+                    default:
+                        return SendInputHandler.IDENTIFIER;
+                }
+            }
+
+            return appGlobal.fakerInputInstalled
+                ? FakerInputHandler.IDENTIFIER
+                : SendInputHandler.IDENTIFIER;
         }
 
         private VirtualKBMBase GetFallbackKBMHandler()
@@ -483,8 +637,8 @@ namespace DS4MapperTest
                 tempProfilePath = deviceProfileListDict[device.DeviceType].ProfileListCol[0].ProfilePath;
             }
 
-            if (deviceMapperMap.TryGetValue(device, out Mapper testMapper))
-            {
+                if (deviceMapperMap.TryGetValue(device, out Mapper testMapper))
+                {
                 if (!string.IsNullOrEmpty(tempProfilePath))
                 {
                     testMapper.ProfileFile = tempProfilePath;
@@ -492,11 +646,13 @@ namespace DS4MapperTest
 
                 //testMapper.Start(device, reader);
                 testMapper.PassVIIPERConnection(serverHandle);
+                testMapper.PassMouseOutputDispatcher(mouseOutputDispatcher);
                 //testMapper.Start(vigemTestClient, virtualEventHandler, eventInputMapping);
                 testMapper.Start(virtualEventHandler, eventInputMapping);
                 //testMapper.RequestOSD += TestMapper_RequestOSD;
                 int tempInd = ind;
-                testMapper.ProfileChanged += (object sender, string e) => {
+                testMapper.ProfileChanged += (object sender, string e) =>
+                {
                     appGlobal.activeProfiles[tempInd] = e;
                     appGlobal.SaveControllerDeviceSettings(device, device.DeviceOptions);
                 };
@@ -505,6 +661,7 @@ namespace DS4MapperTest
 
                 controllerList[ind] = device;
                 LogDebug($"Synced controller #{ind + 1} ({device.Serial})");
+                RefreshControllerVisibilityState();
             }
         }
 
@@ -566,13 +723,22 @@ namespace DS4MapperTest
                         }
                     }
                 });
+                RefreshControllerVisibilityState();
             }
         }
 
         public void Stop()
         {
+            if (!isRunning || changingService) return;
+
+            using WriteLocker locker = new WriteLocker(_hotplugLock);
+
             changingService = true;
             isRunning = false;
+
+            // Stop physical-mouse capture/forwarding first: it must not
+            // outlive or race the virtualEventHandler teardown below.
+            physicalMouseService.Stop();
 
             PreServiceStop?.Invoke(this, EventArgs.Empty);
 
@@ -593,6 +759,8 @@ namespace DS4MapperTest
                 mapper.UnplugViiperVirtualControllers();
             }
 
+            hidHideVisibilityManager.ClearSessionOverrides();
+
             Thread.Sleep(500);
 
             mapperDict.Clear();
@@ -606,6 +774,11 @@ namespace DS4MapperTest
 
             //vigemTestClient?.Dispose();
             //vigemTestClient = null;
+
+            mouseOutputDispatcher?.Dispose();
+            mouseOutputDispatcher = null;
+            mouseOutputRoutingController.DetachRuntime();
+            mouseOutputRoutingController.SetServiceRunning(false);
 
             if (serverHandle != 0)
             {
@@ -636,8 +809,15 @@ namespace DS4MapperTest
             ServiceStopped = null;
         }
 
+        public void RefreshControllerVisibilityState()
+        {
+            hidHideVisibilityManager.Reconcile(controllerList.Where(device => device != null));
+        }
+
         public void ShutDown()
         {
+            mouseOutputRoutingController.Dispose();
+            physicalMouseService.Dispose();
         }
 
         public void Hotplug()
@@ -790,6 +970,7 @@ namespace DS4MapperTest
 
             int tempInd = ind;
             mapper.PassVIIPERConnection(serverHandle);
+            mapper.PassMouseOutputDispatcher(mouseOutputDispatcher);
             //mapper.Start(vigemTestClient, virtualEventHandler, eventInputMapping);
             mapper.Start(virtualEventHandler, eventInputMapping);
             mapper.ProfileChanged += (object sender, string e) => {

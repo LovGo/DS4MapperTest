@@ -1,0 +1,317 @@
+<UserControl x:Class="DS4MapperTest.Views.TouchpadControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             xmlns:views="clr-namespace:DS4MapperTest.Views"
+             xmlns:converters="clr-namespace:DS4MapperTest.Converters"
+             mc:Ignorable="d"
+             d:DesignHeight="560"
+             d:DesignWidth="860">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <converters:InvertBoolToVisibilityConverter x:Key="InvertBoolToVis"/>
+
+        <Style x:Key="TouchpadInlineCard" TargetType="Border" BasedOn="{StaticResource JsmccCardBorder}">
+            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="Padding" Value="12"/>
+        </Style>
+
+        <DataTemplate x:Key="LeftPadRotationRowTemplate">
+            <Border Style="{StaticResource JsmccSettingRowBorder}" Margin="0,0,0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="112"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0"
+                               Text="Left Pad Rotation (deg)"
+                               Style="{StaticResource JsmccLabelText}"
+                               VerticalAlignment="Center"/>
+                    <Slider Grid.Column="1"
+                            Minimum="-180"
+                            Maximum="180"
+                            Value="{Binding LeftPadRotation, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            Margin="8,0,12,0"
+                            VerticalAlignment="Center"/>
+                    <hc:NumericUpDown Grid.Column="2"
+                                      Minimum="-180"
+                                      Maximum="180"
+                                      DecimalPlaces="0"
+                                      Increment="1"
+                                      Value="{Binding LeftPadRotation, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                      Style="{StaticResource JsmccNumericUpDownStyle}"/>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="RightPadRotationRowTemplate">
+            <Border Style="{StaticResource JsmccSettingRowBorder}" Margin="0,0,0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="112"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0"
+                               Text="Right Pad Rotation (deg)"
+                               Style="{StaticResource JsmccLabelText}"
+                               VerticalAlignment="Center"/>
+                    <Slider Grid.Column="1"
+                            Minimum="-180"
+                            Maximum="180"
+                            Value="{Binding RightPadRotation, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            Margin="8,0,12,0"
+                            VerticalAlignment="Center"/>
+                    <hc:NumericUpDown Grid.Column="2"
+                                      Minimum="-180"
+                                      Maximum="180"
+                                      DecimalPlaces="0"
+                                      Increment="1"
+                                      Value="{Binding RightPadRotation, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                      Style="{StaticResource JsmccNumericUpDownStyle}"/>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="TouchpadPadSettingsTemplate">
+            <StackPanel>
+                <StackPanel Margin="0,0,0,6">
+                    <TextBlock Text="Mode" Style="{StaticResource JsmccSectionTitle}"/>
+                    <TextBlock Text="Choose the mode for this touchpad input, and give it a custom name."
+                               Style="{StaticResource JsmccBodyText}"
+                               TextWrapping="Wrap"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+
+                <Border Style="{StaticResource TouchpadInlineCard}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding DisplayName}"
+                                   Style="{StaticResource JsmccCardTitle}"/>
+                        <TextBlock Text="{Binding BindingName}"
+                                   Style="{StaticResource JsmccMutedText}"
+                                   Margin="0,3,0,6"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Mode" Style="{StaticResource JsmccLabelText}" Width="120" VerticalAlignment="Center"/>
+                            <ComboBox ItemsSource="{Binding AvailableActionOptions}"
+                                      SelectedValuePath="Index"
+                                      DisplayMemberPath="DisplayName"
+                                      SelectedValue="{Binding SelectedActionIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      Style="{StaticResource JsmccComboBoxStyle}"
+                                      MinWidth="180"
+                                      Margin="8,0,0,0"/>
+                        </StackPanel>
+
+                        <TextBlock Text="{Binding BindingStatus}"
+                                   Style="{StaticResource JsmccBodyText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0"/>
+
+                        <Border Style="{StaticResource JsmccSettingRowBorder}"
+                                Visibility="{Binding ShowPassthruPrecedenceNotice, Converter={StaticResource BoolToVis}}"
+                                Margin="0,10,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Passthru Priority"
+                                           Style="{StaticResource JsmccLabelText}"/>
+                                <TextBlock Text="{Binding PassthruPrecedenceMessage}"
+                                           Style="{StaticResource JsmccBodyText}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <ContentControl Tag="Extra"
+                                        DataContext="{Binding}"
+                                        Loaded="InlineSettingsHost_Loaded"
+                                        Margin="0,10,0,0"/>
+                        <ContentControl Tag="Bindings"
+                                        DataContext="{Binding}"
+                                        Loaded="InlineSettingsHost_Loaded"
+                                        Margin="0,10,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Visibility="{Binding IsSensitivityCalibrationAction, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <StackPanel Margin="0,0,0,6"
+                                    Visibility="{Binding IsRelativeMouseAction, Converter={StaticResource InvertBoolToVis}}">
+                            <TextBlock Text="Sensitivity" Style="{StaticResource JsmccSectionTitle}"/>
+                            <TextBlock Text="Base and vertical sensitivity, and acceleration curve settings for this touchpad input."
+                                       Style="{StaticResource JsmccBodyText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <Border Style="{StaticResource TouchpadInlineCard}">
+                            <ContentControl Tag="SensitivityCalibration"
+                                            DataContext="{Binding}"
+                                            Loaded="InlineSettingsHost_Loaded"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border Visibility="{Binding IsFilteringStabilisationAction, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <StackPanel Margin="0,0,0,6">
+                            <TextBlock Text="Filtering &amp; Stabilisation" Style="{StaticResource JsmccSectionTitle}"/>
+                            <TextBlock Text="Deadzone, smoothing, and stability settings for this touchpad input."
+                                       Style="{StaticResource JsmccBodyText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <Border Style="{StaticResource TouchpadInlineCard}">
+                            <ContentControl Tag="FilteringStabilisation"
+                                            DataContext="{Binding}"
+                                            Loaded="InlineSettingsHost_Loaded"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border Visibility="{Binding IsTrackballScrollAction, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <StackPanel Margin="0,0,0,6">
+                            <TextBlock Text="Trackball &amp; Scroll" Style="{StaticResource JsmccSectionTitle}"/>
+                            <TextBlock Text="Trackball and scroll settings for this touchpad input."
+                                       Style="{StaticResource JsmccBodyText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <Border Style="{StaticResource TouchpadInlineCard}">
+                            <ContentControl Tag="TrackballScroll"
+                                            DataContext="{Binding}"
+                                            Loaded="InlineSettingsHost_Loaded"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="ModeSettingsSectionRoot"
+                        Visibility="{Binding IsModeSettingsAction, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <StackPanel Margin="0,0,0,6">
+                            <TextBlock Text="Mode Settings" Style="{StaticResource JsmccSectionTitle}"/>
+                            <TextBlock Text="Mode-specific controls for this touchpad input, shown when the selected mode supports them."
+                                       Style="{StaticResource JsmccBodyText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <StackPanel x:Name="SteamPadRotationSlot"/>
+
+                        <Border Style="{StaticResource TouchpadInlineCard}"
+                                Visibility="{Binding IsModeSettingsAction, Converter={StaticResource BoolToVis}}">
+                            <ContentControl Tag="ModeSettings"
+                                            DataContext="{Binding}"
+                                            Loaded="InlineSettingsHost_Loaded"/>
+                        </Border>
+
+                        <Border Style="{StaticResource TouchpadInlineCard}"
+                                Visibility="{Binding IsAdvancedAction, Converter={StaticResource BoolToVis}}">
+                            <ContentControl Tag="Advanced"
+                                            DataContext="{Binding}"
+                                            Loaded="InlineSettingsHost_Loaded"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border Visibility="{Binding IsZoneAction, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <StackPanel Margin="0,0,0,6">
+                            <TextBlock Text="Zones" Style="{StaticResource JsmccSectionTitle}"/>
+                            <TextBlock Text="Deadzone and zone tuning for this touchpad input."
+                                       Style="{StaticResource JsmccBodyText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <Border Style="{StaticResource TouchpadInlineCard}">
+                            <ContentControl Tag="Zones"
+                                            DataContext="{Binding}"
+                                            Loaded="InlineSettingsHost_Loaded"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border Visibility="{Binding IsOuterRingAction, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <StackPanel Margin="0,0,0,6">
+                            <TextBlock Text="Outer Ring" Style="{StaticResource JsmccSectionTitle}"/>
+                            <TextBlock Text="Outer ring activation and binding settings for this touchpad input."
+                                       Style="{StaticResource JsmccBodyText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <Border Style="{StaticResource TouchpadInlineCard}">
+                            <ContentControl Tag="OuterRing"
+                                            DataContext="{Binding}"
+                                            Loaded="InlineSettingsHost_Loaded"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border Visibility="{Binding IsGestureAction, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <StackPanel Margin="0,0,0,6">
+                            <TextBlock Text="Gestures" Style="{StaticResource JsmccSectionTitle}"/>
+                            <TextBlock Text="Gesture binding and timing settings for this touchpad input."
+                                       Style="{StaticResource JsmccBodyText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <Border Style="{StaticResource TouchpadInlineCard}">
+                            <ContentControl Tag="Gestures"
+                                            DataContext="{Binding}"
+                                            Loaded="InlineSettingsHost_Loaded"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border Visibility="{Binding IsMouseMovementAction, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <StackPanel Margin="0,0,0,6">
+                            <TextBlock Text="Mouse &amp; Movement" Style="{StaticResource JsmccSectionTitle}"/>
+                            <TextBlock Text="Movement settings for this touchpad input's movement mode."
+                                       Style="{StaticResource JsmccBodyText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <Border Style="{StaticResource TouchpadInlineCard}">
+                            <ContentControl Tag="MouseMovement"
+                                            DataContext="{Binding}"
+                                            Loaded="InlineSettingsHost_Loaded"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled"
+                  CanContentScroll="False">
+        <TabControl x:Name="TabControlRoot" Style="{StaticResource JsmccPillTabControlStyle}">
+            <TabItem Header="Touch Bindings">
+                <StackPanel>
+                    <views:SharedButtonKeybindsControl
+                        SectionTitle="Touch Bindings"
+                        Description="Touchpad capacitive touch bindings."
+                        EmptyText="No touchpad touch bindings were found for this controller."
+                        CardSubtitle="Touchpad input"
+                        ItemsSource="{Binding TouchpadTouchBindings}"/>
+                </StackPanel>
+            </TabItem>
+            <TabItem Header="{Binding TouchpadClickBindingsTabHeader}">
+                <StackPanel>
+                    <views:SharedButtonKeybindsControl
+                        SectionTitle="{Binding TouchpadClickBindingsTabHeader}"
+                        Description="{Binding TouchpadClickBindingsDescription}"
+                        EmptyText="{Binding TouchpadClickBindingsEmptyText}"
+                        CardSubtitle="Touchpad input"
+                        ItemsSource="{Binding TouchpadPressBindings}"
+                        UseClickTerminology="{Binding UsesPlayStationTouchpadClickNames}"/>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+    </ScrollViewer>
+</UserControl>

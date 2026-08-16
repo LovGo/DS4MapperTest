@@ -1,11 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using DS4MapperTest.ActionUtil;
 using DS4MapperTest.ButtonActions;
-using DS4MapperTest.MapperUtil;
 
 namespace DS4MapperTest.ViewModels
 {
@@ -34,44 +28,41 @@ namespace DS4MapperTest.ViewModels
             }
         }
 
-        public string DurationMs
+        public int DelayMs
         {
-            get => func.DurationMs.ToString();
+            get => func.DelayDurationMs;
             set
             {
-                if (int.TryParse(value, out int temp))
-                {
-                    func.DurationMs = temp;
-                    DurationMsChanged?.Invoke(this, EventArgs.Empty);
-                }
+                func.DelayDurationMs = value;
             }
         }
-        public event EventHandler DurationMsChanged;
 
-        public string DelayDurationMs
+        public bool ToggleEnabled
         {
-            get => func.DelayDurationMs.ToString();
+            get => func.toggleEnabled;
             set
             {
-                if (int.TryParse(value, out int temp))
-                {
-                    func.DelayDurationMs = temp;
-                    DelayDurationMsChanged?.Invoke(this, EventArgs.Empty);
-                }
+                func.toggleEnabled = value;
             }
         }
-        public event EventHandler DelayDurationMsChanged;
 
-        public bool Interruptable
+        public bool MaxHoldTimeEnabled
         {
-            get => func.interruptable;
+            get => func.MaxHoldTimeEnabled;
             set
             {
-                func.interruptable = value;
-                InterruptableChanged?.Invoke(this, EventArgs.Empty);
+                func.MaxHoldTimeEnabled = value;
             }
         }
-        public event EventHandler InterruptableChanged;
+
+        public int MaxHoldTimeMs
+        {
+            get => func.MaxHoldTimeMs;
+            set
+            {
+                func.MaxHoldTimeMs = value;
+            }
+        }
 
         public ReleaseFuncPropViewModel(Mapper mapper, ButtonAction action,
             ReleaseFunc func)
